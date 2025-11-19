@@ -9,6 +9,24 @@ Each cell in the grid can be:
 
 import numpy as np
 from typing import Tuple, List, Optional
+try:
+    from scipy import ndimage
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    print("Warning: scipy not available. Obstacle inflation will use fallback method.")
+try:
+    from scipy import ndimage
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    print("Warning: scipy not available. Obstacle inflation will use fallback method.")
+try:
+    from scipy import ndimage
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    print("Warning: scipy not available. Obstacle inflation will use fallback method.")
 
 
 class GridWorld:
@@ -38,6 +56,10 @@ class GridWorld:
         
         # Initialize empty grid (all navigable water)
         self.grid = np.zeros((height, width), dtype=np.float32)
+        
+        # Inflated grid for path planning (safety buffer around obstacles)
+        self._inflated_grid = None
+        self._inflation_radius = 0
         
         print(f"Created GridWorld: {width}x{height} cells, {cell_size}m per cell")
         print(f"Total area: {width * cell_size}m x {height * cell_size}m")
@@ -147,6 +169,86 @@ class GridWorld:
         idx = np.random.randint(0, len(free_cells))
         y, x = free_cells[idx]
         return int(x), int(y)
+    
+    def inflate_obstacles(self, radius_cells: int = 2) -> np.ndarray:
+        """
+        Create a safety buffer around obstacles (costmap).
+        Any cell within 'radius_cells' of an obstacle becomes an obstacle.
+        
+        This is used for path planning to keep vessels away from walls.
+        
+        Args:
+            radius_cells: Buffer radius in cells (e.g., 2 cells = 20m for cell_size=10m)
+        
+        Returns:
+            Inflated grid with safety buffer
+        
+        Example:
+            If a vessel is 20m long and cell_size is 10m, use radius_cells=2
+            to maintain a 2-cell (20m) safety margin around obstacles.
+        """
+        # Cache the inflated grid if radius hasn't changed
+        if self._inflated_grid is not None and self._inflation_radius == radius_cells:
+            return self._inflated_grid
+        
+        if radius_cells <= 0:
+            # No inflation
+            self._inflated_grid = self.grid.copy()
+            self._inflation_radius = 0
+            return self._inflated_grid
+        
+        # Create binary mask of obstacles
+        obstacles = self.grid > 0.5
+        
+        if SCIPY_AVAILABLE:
+            # Use scipy for efficient morphological dilation
+            structure = np.ones((2 * radius_cells + 1, 2 * radius_cells + 1))
+            buffered = ndimage.binary_dilation(obstacles, structure=structure).astype(np.float32)
+        else:
+            # Fallback: manual dilation (slower but works without scipy)
+            buffered = obstacles.astype(np.float32)
+            temp = obstacles.copy()
+            
+            for _ in range(radius_cells):
+                # Dilate by checking neighbors
+                new_obstacles = temp.copy()
+                for y in range(self.height):
+                    for x in range(self.width):
+                        if temp[y, x]:
+                            # Mark all neighbors as obstacles
+                            for dy in [-1, 0, 1]:
+                                for dx in [-1, 0, 1]:
+                                    ny, nx = y + dy, x + dx
+                                    if 0 <= ny < self.height and 0 <= nx < self.width:
+                                        new_obstacles[ny, nx] = True
+                temp = new_obstacles
+            buffered = temp.astype(np.float32)
+        
+        # Cache the result
+        self._inflated_grid = buffered
+        self._inflation_radius = radius_cells
+        
+        # Print statistics
+        original_obstacles = np.sum(self.grid > 0.5)
+        inflated_obstacles = np.sum(buffered > 0.5)
+        print(f"Inflated obstacles: {original_obstacles} → {inflated_obstacles} cells "
+              f"(+{inflated_obstacles - original_obstacles} safety buffer, radius={radius_cells})")
+        
+        return self._inflated_grid
+    
+    def get_planning_grid(self, safety_margin_cells: int = 2) -> np.ndarray:
+        """
+        Get the grid to use for path planning with safety margins.
+        
+        Args:
+            safety_margin_cells: Safety buffer radius in cells (0 = no buffer)
+        
+        Returns:
+            Grid with inflated obstacles for safe path planning
+        """
+        if safety_margin_cells <= 0:
+            return self.grid
+        return self.inflate_obstacles(safety_margin_cells)
     
     def __repr__(self) -> str:
         """String representation of the grid."""

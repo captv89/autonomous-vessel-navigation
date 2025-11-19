@@ -263,9 +263,7 @@ def demo_animation():
         print("=" * 70)
         
         # Animate with 50ms between frames (adjust for faster/slower)
-        animator.animate(start, goal, interval=50)
-    
-    else:
+            animator.animate(start, goal, interval=30)    else:
         print("\n❌ Could not find path to animate.")
 
 

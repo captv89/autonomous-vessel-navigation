@@ -10,6 +10,49 @@ import heapq
 from dataclasses import dataclass, field
 
 
+def simplify_path(waypoints: List[Tuple[float, float]], 
+                  min_distance: float = 5.0,
+                  lookahead_buffer: float = 1.2) -> List[Tuple[float, float]]:
+    """
+    Simplify path by removing intermediate waypoints that are too close together.
+    This removes grid artifacts and creates a smoother path for controllers.
+    
+    Args:
+        waypoints: Original dense waypoint list from A*
+        min_distance: Minimum distance between kept waypoints (default=5.0)
+        lookahead_buffer: Reserved for future use (default=1.2)
+        
+    Returns:
+        Simplified waypoint list with only key turning points
+        
+    Example:
+        # A* returns 85 waypoints for a 105-unit path (too dense)
+        simplified = simplify_path(waypoints, min_distance=8.0)
+        # Returns ~13 waypoints - much better for path following controllers
+    """
+    if len(waypoints) <= 2:
+        return waypoints
+    
+    # Always keep start
+    simplified = [waypoints[0]]
+    
+    for i in range(1, len(waypoints) - 1):
+        prev_wp = simplified[-1]
+        curr_wp = waypoints[i]
+        goal = waypoints[-1]
+        
+        dist_to_prev = np.hypot(curr_wp[0] - prev_wp[0], curr_wp[1] - prev_wp[1])
+        dist_to_goal = np.hypot(goal[0] - curr_wp[0], goal[1] - curr_wp[1])
+        
+        # Only keep the waypoint if it is sufficiently far from the previous
+        # AND sufficiently far from the goal (to avoid clustering at the end)
+        if dist_to_prev >= min_distance and dist_to_goal >= min_distance:
+            simplified.append(curr_wp)
+            
+    simplified.append(waypoints[-1])  # Always keep goal
+    return simplified
+
+
 @dataclass(order=True)
 class Node:
     """
@@ -34,16 +77,30 @@ class AStar:
     A* pathfinding algorithm implementation.
     """
     
-    def __init__(self, grid_world, allow_diagonal: bool = True):
+    def __init__(self, grid_world, allow_diagonal: bool = True, safety_margin_cells: int = 2):
         """
         Initialize A* pathfinder.
         
         Args:
             grid_world: GridWorld object containing the environment
             allow_diagonal: Whether to allow diagonal movement
+            safety_margin_cells: Safety buffer around obstacles in cells (default=2).
+                               Set to 0 to disable safety buffer.
+                               Example: For 10m cells and 20m vessel, use 2 cells buffer.
         """
         self.grid_world = grid_world
         self.allow_diagonal = allow_diagonal
+        self.safety_margin_cells = safety_margin_cells
+        
+        # Get planning grid with safety buffer
+        # This inflated grid is used for pathfinding to avoid obstacles
+        # The original grid is still used for actual collision detection
+        if safety_margin_cells > 0:
+            print(f"A* using safety margin: {safety_margin_cells} cells ({safety_margin_cells * grid_world.cell_size:.1f}m)")
+            self.planning_grid = grid_world.get_planning_grid(safety_margin_cells)
+        else:
+            print("A* using no safety margin (not recommended)")
+            self.planning_grid = grid_world.grid
         
         # Costs for movement
         self.straight_cost = 1.0
@@ -88,6 +145,51 @@ class AStar:
         # Straight movement
         return self.straight_cost
     
+    def get_valid_neighbors(self, x: int, y: int) -> List[Tuple[int, int]]:
+        """
+        Get valid navigable neighbors using the planning grid (with safety buffer).
+        
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            
+        Returns:
+            List of valid neighbor positions (x, y)
+        """
+        neighbors = []
+        
+        # Define movement directions
+        if self.allow_diagonal:
+            # 8-directional movement
+            directions = [
+                (-1, -1), (0, -1), (1, -1),
+                (-1,  0),          (1,  0),
+                (-1,  1), (0,  1), (1,  1)
+            ]
+        else:
+            # 4-directional movement
+            directions = [
+                          (0, -1),
+                (-1,  0),          (1,  0),
+                          (0,  1)
+            ]
+        
+        # Check each direction
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            
+            # Check bounds
+            if nx < 0 or nx >= self.grid_world.width or ny < 0 or ny >= self.grid_world.height:
+                continue
+            
+            # Check if navigable in planning grid (respects safety buffer)
+            if self.planning_grid[ny, nx] > 0.5:
+                continue
+            
+            neighbors.append((nx, ny))
+        
+        return neighbors
+    
     def reconstruct_path(self, node: Node) -> List[Tuple[int, int]]:
         """
         Reconstruct the path from start to goal by following parent nodes.
@@ -125,13 +227,17 @@ class AStar:
         Returns:
             List of (x, y) positions representing the path, or None if no path exists
         """
-        # Validate start and goal
-        if not self.grid_world.is_valid(start[0], start[1]):
-            print(f"❌ Start position {start} is not valid!")
+        # Validate start and goal against planning grid (with safety buffer)
+        if (start[0] < 0 or start[0] >= self.grid_world.width or
+            start[1] < 0 or start[1] >= self.grid_world.height or
+            self.planning_grid[start[1], start[0]] > 0.5):
+            print(f"❌ Start position {start} is not valid or too close to obstacles!")
             return None
         
-        if not self.grid_world.is_valid(goal[0], goal[1]):
-            print(f"❌ Goal position {goal} is not valid!")
+        if (goal[0] < 0 or goal[0] >= self.grid_world.width or
+            goal[1] < 0 or goal[1] >= self.grid_world.height or
+            self.planning_grid[goal[1], goal[0]] > 0.5):
+            print(f"❌ Goal position {goal} is not valid or too close to obstacles!")
             return None
         
         if verbose:
@@ -189,11 +295,8 @@ class AStar:
             # Mark as visited
             closed_set.add(current_pos)
             
-            # Explore neighbors
-            neighbors = self.grid_world.get_neighbors(
-                current_pos[0], current_pos[1], 
-                allow_diagonal=self.allow_diagonal
-            )
+            # Explore neighbors (using planning grid with safety buffer)
+            neighbors = self.get_valid_neighbors(current_pos[0], current_pos[1])
             
             for neighbor_pos in neighbors:
                 # Skip if already processed
@@ -313,7 +416,7 @@ def demo_astar(animate: bool = False):
             print("  🔴 Red star    = Goal position")
             print("  🟡 Yellow line = Final path (shown at the end)")
             print("\nClose the window when done watching.")
-            animator.animate(start, goal, interval=50)
+            animator.animate(start, goal, interval=30)
     else:
         # Use AStar for static plot
         from src.visualization.plotter import Plotter
