@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict
 
 from src.environment.grid_world import GridWorld
-from src.pathfinding.astar import AStar, simplify_path
+from src.pathfinding.astar import AStar
 from src.vessel.vessel_model import KinematicVessel, NomotoVessel
 from src.vessel.path_follower import PurePursuitController, LOSController
 from src.visualization.path_animator import PathAnimator
@@ -32,26 +32,20 @@ def main():
     from src.pathfinding.astar import create_test_scenario
     grid, start, goal = create_test_scenario()
     
-    # Find path
+    # Find path with automatic string pulling optimization
     print("\nFinding path with A*...")
     
     astar = AStar(grid, allow_diagonal=True)
-    waypoints = astar.find_path(start, goal, verbose=True)
+    waypoints = astar.find_path(start, goal, verbose=True, simplify=True, max_segment_length=15.0)
     
     if not waypoints:
         print("❌ No path found!")
         return
     
-    # Simplify path for path following
-    print(f"\nSimplifying path from {len(waypoints)} to fewer waypoints...")
-    simplified_waypoints = simplify_path(waypoints, min_distance=8.0)
-    print(f"Simplified path has {len(simplified_waypoints)} waypoints")
-    print(f"Sample waypoints: {simplified_waypoints[:3]} ... {simplified_waypoints[-2:]}")
-    
-    # Debug: print all simplified waypoints
-    print("\nAll simplified waypoints:")
-    for i, wp in enumerate(simplified_waypoints):
-        print(f"  {i}: {wp}")
+    # Debug: print all optimized waypoints
+    print("\nOptimized waypoints (string pulling applied):")
+    for i, wp in enumerate(waypoints):
+        print(f"  {i}: ({wp[0]:.1f}, {wp[1]:.1f})")
     
     # Choose comparison mode
     print("\n" + "=" * 70)
@@ -78,14 +72,14 @@ def main():
                                  heading=0.0, speed=0.5, K=0.5, T=3.0)
         controller_pp = PurePursuitController(lookahead_distance=10.0)
         trajectories["Pure Pursuit"] = animator.simulate_controller(
-            vessel_pp, controller_pp, simplified_waypoints, "Pure Pursuit", dt=0.1, verbose=True)
+            vessel_pp, controller_pp, waypoints, "Pure Pursuit", dt=0.1, verbose=True)
         
         # LOS
         vessel_los = NomotoVessel(x=float(start[0]), y=float(start[1]),
                                   heading=0.0, speed=0.5, K=0.5, T=3.0)
         controller_los = LOSController(lookahead_distance=10.0, path_tolerance=2.0)
         trajectories["LOS"] = animator.simulate_controller(
-            vessel_los, controller_los, simplified_waypoints, "LOS", dt=0.1, verbose=True)
+            vessel_los, controller_los, waypoints, "LOS", dt=0.1, verbose=True)
         
     elif choice == '2':
         # Pure Pursuit only
@@ -93,7 +87,7 @@ def main():
                              heading=0.0, speed=0.5, K=0.5, T=3.0)
         controller = PurePursuitController(lookahead_distance=10.0)
         trajectories["Pure Pursuit"] = animator.simulate_controller(
-            vessel, controller, simplified_waypoints, "Pure Pursuit", dt=0.1, verbose=True)
+            vessel, controller, waypoints, "Pure Pursuit", dt=0.1, verbose=True)
         
     elif choice == '3':
         # LOS only
@@ -101,7 +95,7 @@ def main():
                              heading=0.0, speed=0.5, K=0.5, T=3.0)
         controller = LOSController(lookahead_distance=10.0, path_tolerance=2.0)
         trajectories["LOS"] = animator.simulate_controller(
-            vessel, controller, simplified_waypoints, "LOS", dt=0.1, verbose=True)
+            vessel, controller, waypoints, "LOS", dt=0.1, verbose=True)
     
     # Animate
     print("\n" + "=" * 70)
