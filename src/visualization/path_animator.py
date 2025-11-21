@@ -7,7 +7,8 @@ Animates vessel following waypoints with path following controllers.
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.patches import Circle, Wedge
+from matplotlib.patches import Circle, Wedge, Polygon, Rectangle
+from matplotlib.transforms import Affine2D
 from typing import List, Tuple, Dict
 
 
@@ -112,13 +113,35 @@ class PathAnimator:
             # Get target point for visualization
             target = controller.get_target_point((x, y), waypoints)
             
+            # Calculate cross-track error (distance to nearest path segment)
+            cross_track_error = 0.0
+            if len(waypoints) >= 2:
+                min_dist = float('inf')
+                for i in range(len(waypoints) - 1):
+                    p1 = np.array(waypoints[i])
+                    p2 = np.array(waypoints[i + 1])
+                    vessel_pos = np.array([x, y])
+                    
+                    # Project vessel position onto line segment
+                    line_vec = p2 - p1
+                    line_len_sq = np.dot(line_vec, line_vec)
+                    if line_len_sq > 0:
+                        t = max(0, min(1, np.dot(vessel_pos - p1, line_vec) / line_len_sq))
+                        projection = p1 + t * line_vec
+                        dist = np.linalg.norm(vessel_pos - projection)
+                        min_dist = min(min_dist, dist)
+                cross_track_error = min_dist
+            
             # Update vessel based on type
+            rudder_angle = 0.0
+            rate_of_turn = 0.0
+            
             if vessel_type == 'NomotoVessel':
                 # PD controller for rudder
                 heading_error = desired_heading - heading
                 heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
                 
-                yaw_rate = vessel.r if hasattr(vessel, 'r') else 0.0
+                yaw_rate = vessel.r if hasattr(vessel, 'r') else vessel.get_turn_rate()
                 
                 # Tuning gains for T=3.0, K=0.5
                 Kp = 4.0  # Proportional gain
@@ -126,8 +149,13 @@ class PathAnimator:
                 
                 rudder_command = (Kp * heading_error) - (Kd * yaw_rate)
                 vessel.update(dt, rudder_command=rudder_command)
+                
+                # Get rudder angle and rate of turn from vessel
+                rudder_angle = vessel.rudder_angle if hasattr(vessel, 'rudder_angle') else rudder_command
+                rate_of_turn = yaw_rate
             elif vessel_type == 'KinematicVessel':
                 vessel.update(dt, desired_heading=desired_heading)
+                rate_of_turn = vessel.state.turn_rate if hasattr(vessel.state, 'turn_rate') else 0.0
             
             # Record state for animation
             trajectory.append({
@@ -137,7 +165,10 @@ class PathAnimator:
                 'speed': speed,
                 'time': steps * dt,
                 'target': target,
-                'desired_heading': desired_heading
+                'desired_heading': desired_heading,
+                'rudder_angle': rudder_angle,
+                'rate_of_turn': rate_of_turn,
+                'cross_track_error': cross_track_error
             })
         
         # Calculate statistics
@@ -206,11 +237,18 @@ class PathAnimator:
             ax.plot(waypoints[-1][0], waypoints[-1][1], 'r*', markersize=18,
                    markeredgecolor='darkred', markeredgewidth=2)
             
-            # Vessel elements
-            vessel_patch = Wedge((0, 0), 2.0, 0, 360,
-                                facecolor='red', edgecolor='darkred',
-                                linewidth=2, zorder=10)
-            ax.add_patch(vessel_patch)
+            # Vessel shape: Rectangle body + Triangle bow (10% smaller)
+            # Body: centered at origin, 5.4x2.25 (90% of 6x2.5)
+            vessel_body = Rectangle((-2.7, -1.125), 5.4, 2.25, 
+                                   facecolor='black', edgecolor='darkgray',
+                                   linewidth=1.5, zorder=10)
+            ax.add_patch(vessel_body)
+            
+            # Bow: triangle at front (right side), 1.8x2.25 (90% of 2x2.5)
+            vessel_bow = Polygon([(2.7, -1.125), (2.7, 1.125), (4.5, 0)],
+                                facecolor='black', edgecolor='darkgray',
+                                linewidth=1.5, zorder=10)
+            ax.add_patch(vessel_bow)
             
             # Target point
             target_circle = Circle((0, 0), 0.8, facecolor='yellow',
@@ -232,22 +270,31 @@ class PathAnimator:
             ax.set_aspect('equal')
             ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.3, alpha=0.2)
             
-            # Info text
+            # Info text (vessel state)
             info_text = ax.text(0.02, 0.98, '', transform=ax.transAxes,
-                              fontsize=10, verticalalignment='top',
-                              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                              fontsize=9, verticalalignment='top',
+                              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.85),
                               zorder=12)
+            
+            # Dynamics text (bottom left - rudder, ROT, CTE)
+            dynamics_text = ax.text(0.02, 0.02, '', transform=ax.transAxes,
+                                  fontsize=9, verticalalignment='bottom',
+                                  bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.85),
+                                  zorder=12)
             
             animations.append({
                 'ax': ax,
                 'trajectory': trajectory,
-                'vessel_patch': vessel_patch,
+                'vessel_body': vessel_body,
+                'vessel_bow': vessel_bow,
                 'target_circle': target_circle,
                 'target_line': target_line,
                 'trail_line': trail_line,
                 'info_text': info_text,
+                'dynamics_text': dynamics_text,
                 'trail_x': [],
-                'trail_y': []
+                'trail_y': [],
+                'distance_traveled': 0.0
             })
         
         plt.tight_layout()
@@ -272,12 +319,17 @@ class PathAnimator:
                 state = trajectory[frame]
                 x, y = state['x'], state['y']
                 heading = state['heading']
+                rudder_angle = state.get('rudder_angle', 0.0)
+                rate_of_turn = state.get('rate_of_turn', 0.0)
+                cross_track_error = state.get('cross_track_error', 0.0)
                 
-                # Update vessel
-                anim['vessel_patch'].set_center((x, y))
-                heading_deg = np.degrees(heading)
-                anim['vessel_patch'].set_theta1(heading_deg - 150)
-                anim['vessel_patch'].set_theta2(heading_deg + 150)
+                # Create rotation transform
+                transform = (Affine2D().rotate(heading).translate(x, y) + 
+                           anim['ax'].transData)
+                
+                # Update vessel body and bow with rotation
+                anim['vessel_body'].set_transform(transform)
+                anim['vessel_bow'].set_transform(transform)
                 
                 # Update target point
                 if state['target']:
@@ -285,21 +337,41 @@ class PathAnimator:
                     anim['target_circle'].set_center((tx, ty))
                     anim['target_line'].set_data([x, tx], [y, ty])
                 
-                # Update trail
+                # Update trail and calculate distance traveled
                 anim['trail_x'].append(x)
                 anim['trail_y'].append(y)
                 anim['trail_line'].set_data(anim['trail_x'], anim['trail_y'])
                 
-                # Update info
+                # Calculate distance traveled
+                if len(anim['trail_x']) > 1:
+                    dx = anim['trail_x'][-1] - anim['trail_x'][-2]
+                    dy = anim['trail_y'][-1] - anim['trail_y'][-2]
+                    anim['distance_traveled'] += np.sqrt(dx**2 + dy**2)
+                
+                # Convert heading to standard navigation notation (0° = North, 90° = East, clockwise)
+                # Matplotlib uses (0° = East, counterclockwise), so convert: Nav = 90° - Math heading
+                heading_360 = (90 - np.degrees(heading)) % 360
+                
+                # Update info text (top left - position and speed)
                 anim['info_text'].set_text(
                     f'Time: {state["time"]:.1f}s\n'
                     f'Pos: ({x:.1f}, {y:.1f})\n'
-                    f'Heading: {np.degrees(heading):.0f}°\n'
-                    f'Speed: {state["speed"]:.1f}'
+                    f'Heading: {heading_360:.0f}°\n'
+                    f'Speed: {state["speed"]:.2f} units/s\n'
+                    f'Distance: {anim["distance_traveled"]:.1f} units'
                 )
                 
-                artists.extend([anim['vessel_patch'], anim['target_circle'],
-                              anim['target_line'], anim['trail_line'], anim['info_text']])
+                # Update dynamics text (bottom left - rudder, ROT, CTE)
+                anim['dynamics_text'].set_text(
+                    f'Rudder: {np.degrees(rudder_angle):+.1f}°\n'
+                    f'ROT: {np.degrees(rate_of_turn):+.2f}°/s\n'
+                    f'CTE: {cross_track_error:.2f} units'
+                )
+                
+                artists.extend([anim['vessel_body'], anim['vessel_bow'], 
+                              anim['target_circle'], anim['target_line'], 
+                              anim['trail_line'], anim['info_text'],
+                              anim['dynamics_text']])
             
             return artists
         
