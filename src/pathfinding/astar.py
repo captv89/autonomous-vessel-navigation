@@ -667,7 +667,7 @@ class AStar:
 
 def create_test_scenario():
     """
-    Create a test scenario with grid world and waypoints.
+    Create a realistic complex scenario with coastlines, islands, and narrow passages.
     
     Returns:
         Tuple of (grid_world, start, goal)
@@ -678,32 +678,51 @@ def create_test_scenario():
     
     from src.environment.grid_world import GridWorld
     
-    # Create a moderately sized grid for clear visualization
+    # Create a large grid
     grid = GridWorld(width=100, height=100, cell_size=10.0)
     
-    print("\nCreating scenario with obstacles...")
+    print("\nCreating realistic coastal scenario...")
     
-    # Large island on the left
-    grid.add_circular_obstacle(center_x=20, center_y=50, radius=12)
+    # 1. Mainland Coastline (West side)
+    # Irregular shape using overlapping rectangles
+    grid.add_obstacle(x=0, y=0, width=15, height=100)  # Base coast
+    grid.add_obstacle(x=15, y=20, width=10, height=15) # Peninsula 1
+    grid.add_obstacle(x=15, y=60, width=15, height=20) # Peninsula 2 (Headland)
+    grid.add_circular_obstacle(center_x=25, center_y=70, radius=8) # Rounded tip
     
-    # Small islands
-    grid.add_circular_obstacle(center_x=45, center_y=25, radius=5)
-    grid.add_circular_obstacle(center_x=60, center_y=70, radius=6)
-    grid.add_circular_obstacle(center_x=75, center_y=40, radius=4)
+    # 2. Large Island (North-East)
+    grid.add_circular_obstacle(center_x=75, center_y=75, radius=15)
+    grid.add_obstacle(x=70, y=60, width=10, height=15) # Southern extension
     
-    # Shallow water zones
-    grid.add_obstacle(x=35, y=55, width=15, height=8)
-    grid.add_obstacle(x=50, y=10, width=10, height=12)
+    # 3. Archipelago / Reefs (Center-East)
+    # A cluster of small islands creating a "minefield" of obstacles
+    islands = [
+        (50, 40, 4), (60, 35, 3), (55, 25, 5), 
+        (70, 30, 4), (65, 45, 3), (80, 20, 6)
+    ]
+    for x, y, r in islands:
+        grid.add_circular_obstacle(center_x=x, center_y=y, radius=r)
+        
+    # 4. Breakwater / Artificial Structure (South-East)
+    # Protecting a bay area
+    grid.add_obstacle(x=60, y=5, width=30, height=2)   # Horizontal part
+    grid.add_obstacle(x=60, y=5, width=2, height=10)   # Vertical tip
     
-    # Restricted zone
-    grid.add_obstacle(x=10, y=10, width=12, height=12)
+    # 5. Narrow Channel (The "Strait")
+    # Between the Headland (West) and a central island
+    grid.add_circular_obstacle(center_x=45, center_y=65, radius=6)
     
-    # Reef area
-    grid.add_circular_obstacle(center_x=85, center_y=20, radius=7)
-    
+    # 6. Scattered Rocks (Random small obstacles)
+    rocks = [(35, 85), (40, 90), (30, 80), (90, 50), (95, 45)]
+    for x, y in rocks:
+        grid.add_circular_obstacle(center_x=x, center_y=y, radius=2)
+
     # Define start and goal
-    start = (10, 90)
-    goal = (60, 6)
+    # Start in the South-West (open water)
+    start = (25, 10)
+    
+    # Goal in the North-East (behind the large island, requiring navigation)
+    goal = (90, 90)
     
     return grid, start, goal
 
