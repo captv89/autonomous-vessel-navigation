@@ -256,6 +256,18 @@ class CollisionDetector:
         # Relative heading ±10° from opposite
         if abs(rel_bearing_deg) < 22.5 and abs(abs(rel_heading_deg) - 180) < 10:
             return 'head-on'
+            
+        # Crossing Ahead (in the dead-ahead sector but not head-on)
+        if abs(rel_bearing_deg) < 22.5:
+            # Determine direction of crossing based on relative heading
+            # Normalize rel_heading_deg to [-180, 180]
+            while rel_heading_deg > 180: rel_heading_deg -= 360
+            while rel_heading_deg <= -180: rel_heading_deg += 360
+            
+            if rel_heading_deg > 0:
+                return 'crossing-starboard' # Crossing from right to left
+            else:
+                return 'crossing-port' # Crossing from left to right
         
         # Overtaking: approaching from astern (within 22.5° of dead astern)
         # when vessel is moving faster
@@ -263,12 +275,13 @@ class CollisionDetector:
             return 'overtaking'
         
         # Crossing from starboard (right side)
-        # Relative bearing 0° to 112.5° (starboard side, excluding head-on)
-        if 22.5 < rel_bearing_deg < 112.5:
+        # Relative bearing -112.5° to -22.5° (starboard side)
+        if -112.5 < rel_bearing_deg < -22.5:
             return 'crossing-starboard'
         
         # Crossing from port (left side)
-        if -112.5 < rel_bearing_deg < -22.5:
+        # Relative bearing 22.5° to 112.5° (port side)
+        if 22.5 < rel_bearing_deg < 112.5:
             return 'crossing-port'
         
         # Safe passing - well separated

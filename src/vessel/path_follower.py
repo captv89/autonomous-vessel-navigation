@@ -136,26 +136,38 @@ class LOSController:
         # Initialize index to 1 (Segment 0->1) if just starting
         if self.current_wp_idx == 0:
             self.current_wp_idx = 1
-            
-        # 1. Switching Logic (Circle of Acceptance)
-        # If we are within 'radius' of the next waypoint, switch to next segment
+        
+        # 2. Normal Switching Logic (Circle of Acceptance)
         goal_wp = waypoints[self.current_wp_idx]
         dist_to_goal = np.hypot(goal_wp[0] - vessel_pos[0], goal_wp[1] - vessel_pos[1])
         
         if dist_to_goal < self.radius:
             if self.current_wp_idx < len(waypoints) - 1:
                 self.current_wp_idx += 1
-                self.sigma = 0.0  # Reset integral when switching segments to prevent windup overshoot
-                # print(f"Switched to WP {self.current_wp_idx}")
+                self.sigma = 0.0  # Reset integral on waypoint switch
             else:
                 return None # End of path
         
-        # 2. Define the Current Path Segment
-        # Vector from Previous WP (k-1) to Current WP (k)
+        # 2b. Recovery Logic - If we're very far from current waypoint after collision avoidance
+        # Look ahead to see if we're closer to a future waypoint (we may have overshot during avoidance)
+        elif dist_to_goal > self.Delta * 3.0:  # Far from target
+            # Check if any of the next few waypoints are closer
+            for i in range(self.current_wp_idx + 1, min(len(waypoints), self.current_wp_idx + 4)):
+                wp = waypoints[i]
+                wp_dist = np.hypot(wp[0] - vessel_pos[0], wp[1] - vessel_pos[1])
+                # If we find a closer waypoint ahead AND we're within acceptance radius of it
+                if wp_dist < dist_to_goal and wp_dist < self.radius * 1.5:
+                    self.current_wp_idx = i
+                    self.sigma = 0.0
+                    dist_to_goal = wp_dist
+                    goal_wp = wp
+                    break
+        
+        # 3. Define the Current Path Segment
         p_prev = waypoints[self.current_wp_idx - 1]
         p_curr = waypoints[self.current_wp_idx]
         
-        # 3. Vector Algebra
+        # 4. Vector Algebra
         # Path Vector components
         alpha_x = p_curr[0] - p_prev[0]
         alpha_y = p_curr[1] - p_prev[1]
@@ -170,12 +182,12 @@ class LOSController:
         beta_x = vessel_pos[0] - p_prev[0]
         beta_y = vessel_pos[1] - p_prev[1]
         
-        # 4. Calculate Cross-Track Error (y_e)
+        # 5. Calculate Cross-Track Error (y_e)
         # Ideally: Cross product of Unit Path Vector and Vessel Vector
         # y_e = -(x_v - x_p)*sin(chi) + (y_v - y_p)*cos(chi)
         y_e = -(beta_x * np.sin(chi_p)) + (beta_y * np.cos(chi_p))
         
-        # 5. Update Integral Term (sigma)
+        # 6. Update Integral Term (sigma)
         # Formula: d(sigma)/dt = (Delta * y_e) / (y_e^2 + Delta^2)
         # Damping factor ensures we don't integrate too fast when error is huge
         if abs(y_e) < 15.0: # Anti-windup: Only integrate if we are reasonably close
@@ -185,7 +197,7 @@ class LOSController:
         # Hard clamp on integral to prevent spirals
         self.sigma = np.clip(self.sigma, -np.pi/4, np.pi/4)
         
-        # 6. Compute Desired Heading (psi_d)
+        # 7. Compute Desired Heading (psi_d)
         # ILOS Law: psi_d = chi_p - arctan( (y_e + sigma) / Delta )
         lookahead_angle = np.arctan((y_e + self.sigma) / self.Delta)
         psi_d = chi_p - lookahead_angle

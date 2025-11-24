@@ -47,14 +47,16 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         )
         
         self.collision_avoider = CollisionAvoidance(
-            safe_distance=8.0,
-            warning_distance=15.0,
-            avoidance_angle=np.radians(30)
+            safe_distance=10.0,  # Balanced for land and vessel avoidance
+            warning_distance=18.0,  # Proportional warning distance
+            avoidance_angle=np.radians(30),
+            grid_world=grid_world
         )
         
         self.collision_data = []
         self.collision_points = []
         self.avoidance_history = []  # Track avoidance actions
+        self.grounding_points = []  # Track grounding incidents
     
     def simulate(self, waypoints: List[Tuple[float, float]],
                 duration: float, dt: float = 0.1):
@@ -65,6 +67,7 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         self.collision_data = []
         self.collision_points = []
         self.avoidance_history = []
+        self.grounding_points = []
         self.controller.reset()
         
         steps = int(duration / dt)
@@ -72,6 +75,11 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         
         step = 0
         avoidance_count = 0
+        
+        # Logging summary variables
+        last_maneuver = None
+        emergency_count = 0
+        maneuver_changes = []
         
         while step < steps:
             # 1. Get current state
@@ -93,33 +101,67 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
             
             target = self.controller.get_target_point((our_state['x'], our_state['y']), waypoints)
             
+            # Start with desired speed (maintain current)
+            desired_speed = our_state['speed']
+            
             # 4. Collision Detection & Avoidance
             collision_infos, avoidance_actions = self._process_collisions(
-                our_state, step * dt)
+                our_state, step * dt, desired_heading)
             
             # 5. Apply Avoidance
+            current_avoidance_reason = None
             if avoidance_actions:
-                desired_heading, our_state['speed'] = self.collision_avoider.apply_avoidance(
-                    desired_heading, our_state['speed'], avoidance_actions
+                desired_heading, desired_speed = self.collision_avoider.apply_avoidance(
+                    desired_heading, desired_speed, avoidance_actions
                 )
+                
+                # Get primary action (list is sorted by apply_avoidance)
+                primary_action = avoidance_actions[0]
+                current_avoidance_reason = primary_action.reason
                 avoidance_count += 1
+                
                 if step % 10 == 0:
                     self.avoidance_history.append({
                         'time': step * dt,
-                        'action': avoidance_actions[0],
+                        'action': primary_action,
                         'position': (our_state['x'], our_state['y'])
                     })
+                    
+                    # Track significant events for summary
+                    if primary_action.type == 'emergency':
+                        emergency_count += 1
+                    
+                    # Log only when maneuver type changes or during emergencies
+                    current_maneuver = f"{primary_action.type}:{primary_action.reason[:30]}"
+                    if current_maneuver != last_maneuver:
+                        if primary_action.priority >= 4 or primary_action.type == 'emergency':
+                            maneuver_changes.append(f"t={step*dt:.0f}s: {primary_action.reason[:50]}")
+                        last_maneuver = current_maneuver
             
-            # 6. Record State
+            # 6. Check for grounding
+            gx, gy = int(our_state['x']), int(our_state['y'])
+            if (gx >= 0 and gx < self.grid_world.width and 
+                gy >= 0 and gy < self.grid_world.height):
+                if self.grid_world.grid[gy, gx] > 0.5:
+                    # Vessel is on land!
+                    if not self.grounding_points or \
+                       (step * dt - self.grounding_points[-1]['time']) > 1.0:
+                        self.grounding_points.append({
+                            'x': our_state['x'],
+                            'y': our_state['y'],
+                            'time': step * dt
+                        })
+            
+            # 7. Record State
             self._record_simulation_step(step * dt, our_state, target, 
-                                       collision_infos, avoidance_actions)
+                                       collision_infos, avoidance_actions, current_avoidance_reason)
             
-            # 7. Update Vessel & Obstacles
-            self._update_vessel_control(dt, desired_heading, our_state['speed'])
+            # 8. Update Vessel & Obstacles
+            self._update_vessel_control(dt, desired_heading, desired_speed)
             self.manager.update_all(dt)
             step += 1
         
-        self._print_simulation_footer(avoidance_count)
+        self._print_simulation_footer(avoidance_count, emergency_count, maneuver_changes)
         return self.simulation_data
 
     def _print_simulation_header(self):
@@ -132,16 +174,43 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         print(f"  Our vessel + {len(self.manager.obstacles)} dynamic obstacles")
         print(f"{'='*60}")
 
-    def _print_simulation_footer(self, avoidance_count):
-        print(f"  ✓ Simulation complete: {len(self.simulation_data)} frames")
-        print(f"  ⚠️  Avoidance maneuvers: {avoidance_count} steps")
+    def _print_simulation_footer(self, avoidance_count, emergency_count, maneuver_changes):
+        print(f"\n{'='*60}")
+        print("SIMULATION SUMMARY")
+        print(f"{'='*60}")
+        print(f"Duration: {len(self.simulation_data) * 0.1:.1f}s ({len(self.simulation_data)} frames)")
+        print(f"Avoidance: {avoidance_count} steps ({avoidance_count*100//len(self.simulation_data)}% of time)")
+        print(f"Emergency maneuvers: {emergency_count}")
+        print(f"Collisions: {len(self.collision_points)}")
+        print(f"Grounding incidents: {len(self.grounding_points)}")
+        
+        if maneuver_changes:
+            print(f"\nKey Events ({len(maneuver_changes)} significant maneuvers):")
+            # Show first 5 and last 5 if more than 10
+            if len(maneuver_changes) > 10:
+                for event in maneuver_changes[:5]:
+                    print(f"  • {event}")
+                print(f"  ... ({len(maneuver_changes) - 10} more events) ...")
+                for event in maneuver_changes[-5:]:
+                    print(f"  • {event}")
+            else:
+                for event in maneuver_changes:
+                    print(f"  • {event}")
         
         if self.collision_points:
-            print(f"  💥 COLLISIONS DETECTED: {len(self.collision_points)}")
+            print(f"\n💥 COLLISIONS: {len(self.collision_points)}")
             for cp in self.collision_points:
-                print(f"    - t={cp['time']:.1f}s: Vessel {cp['vessel_id']} at ({cp['x']:.1f}, {cp['y']:.1f}), dist={cp['distance']:.1f}")
+                print(f"  - t={cp['time']:.0f}s: Vessel {cp['vessel_id']} @ ({cp['x']:.0f},{cp['y']:.0f})")
         else:
-            print(f"  ✓ NO COLLISIONS - Avoidance successful!")
+            print(f"\n✓ NO COLLISIONS")
+        
+        if self.grounding_points:
+            print(f"\n⚠️ GROUNDING: {len(self.grounding_points)} incidents")
+            for gp in self.grounding_points:
+                print(f"  - t={gp['time']:.0f}s: Vessel ran aground @ ({gp['x']:.0f},{gp['y']:.0f})")
+        else:
+            print(f"\n✓ NO GROUNDING")
+        
         print(f"{'='*60}\n")
 
     def _get_our_vessel_state(self):
@@ -154,10 +223,20 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
             'rate_of_turn': getattr(self.our_vessel, 'get_turn_rate', lambda: 0.0)()
         }
 
-    def _process_collisions(self, our_state, time):
+    def _process_collisions(self, our_state, time, desired_heading=None):
         collision_infos = []
         avoidance_actions = []
         
+        # Check Static Obstacles (Land) first
+        static_action = self.collision_avoider.check_static_obstacles(
+            pos=(our_state['x'], our_state['y']),
+            heading=our_state['heading'],
+            speed=our_state['speed']
+        )
+        if static_action:
+            avoidance_actions.append(static_action)
+        
+        # Check each dynamic obstacle and determine avoidance per vessel
         for vessel in self.manager.obstacles:
             # Assess collision risk
             info = self.collision_detector.assess_collision_risk(
@@ -186,19 +265,20 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
                 'obs_speed': vessel.obstacle.speed
             })
             
-            # Determine avoidance action
-            avoidance_action = self.collision_avoider.determine_avoidance_action(
-                our_pos=(our_state['x'], our_state['y']),
-                our_heading=our_state['heading'],
-                our_speed=our_state['speed'],
-                collision_info=info,
-                encounter_type=encounter_type,
-                obstacle_pos=(vessel.obstacle.x, vessel.obstacle.y),
-                obstacle_heading=vessel.obstacle.heading
-            )
-            
-            if avoidance_action:
-                avoidance_actions.append(avoidance_action)
+            # Get avoidance action for this specific vessel
+            if info.is_collision_risk:
+                action = self.collision_avoider.determine_avoidance_action(
+                    our_pos=(our_state['x'], our_state['y']),
+                    our_heading=our_state['heading'],
+                    our_speed=our_state['speed'],
+                    collision_info=info,
+                    encounter_type=encounter_type,
+                    obstacle_pos=(vessel.obstacle.x, vessel.obstacle.y),
+                    obstacle_heading=vessel.obstacle.heading
+                )
+                
+                if action:
+                    avoidance_actions.append(action)
             
             # Detect actual collisions
             if info.current_distance < 3.0:
@@ -218,13 +298,14 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
                  for cp in self.collision_points):
             self.collision_points.append(collision_point)
 
-    def _record_simulation_step(self, time, our_state, target, collision_infos, avoidance_actions):
+    def _record_simulation_step(self, time, our_state, target, collision_infos, avoidance_actions, avoidance_reason=None):
         state = {
             'time': time,
             'our_vessel': {
                 **our_state,
                 'target': target,
-                'avoiding': len(avoidance_actions) > 0
+                'avoiding': len(avoidance_actions) > 0,
+                'avoidance_reason': avoidance_reason
             },
             'dynamic_obstacles': []
         }
@@ -243,8 +324,8 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         self.simulation_data.append(state)
         self.collision_data.append(collision_infos)
 
-    def _update_vessel_control(self, dt, desired_heading, speed):
-        # Update heading
+    def _update_vessel_control(self, dt, desired_heading, desired_speed):
+        # Update heading with PD controller
         heading_error = desired_heading - self.our_vessel.get_heading()
         heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
         
@@ -254,13 +335,15 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
             Kd = 2.5
             yaw_rate = self.our_vessel.get_turn_rate()
             rudder_command = (Kp * heading_error) - (Kd * yaw_rate)
+            # Pass desired_speed to vessel update for proper dynamics integration
             self.our_vessel.update(dt, rudder_command=rudder_command)
+            # Update speed after dynamics (simpler approach for now)
+            if hasattr(self.our_vessel, 'speed'):
+                self.our_vessel.speed = desired_speed
         else:
             self.our_vessel.update(dt, desired_heading=desired_heading)
-        
-        # Update speed
-        if hasattr(self.our_vessel, 'speed'):
-            self.our_vessel.speed = speed
+            if hasattr(self.our_vessel, 'speed'):
+                self.our_vessel.speed = desired_speed
     
     def animate(self, waypoints: List[Tuple[float, float]], 
                interval: int = 5, show_predictions: bool = True, repeat: bool = False):
@@ -458,7 +541,15 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         # Avoidance Text
         info_lines = ['COLLISION AVOIDANCE\n' + '='*30 + '\n\n']
         if our_state.get('avoiding', False):
-            info_lines.append('🚨 AVOIDING!\n\n')
+            info_lines.append('🚨 AVOIDING!\n')
+            if our_state.get('avoidance_reason'):
+                reason = our_state['avoidance_reason']
+                # Split long lines
+                if len(reason) > 35:
+                    reason = reason[:35] + '...'
+                info_lines.append(f"{reason}\n\n")
+            else:
+                info_lines.append('\n')
             
         highest_risk = 0
         risk_names = ['SAFE', 'LOW', 'MEDIUM', 'HIGH']
@@ -551,10 +642,7 @@ def main():
     vessel2 = manager.add_obstacle(x=55, y=100, heading=np.radians(280), speed=0.2, behavior='straight')
     print(f"  Added {vessel2.obstacle} (Head-on in channel)")
     
-    # Obstacle 2: Waypoint following patrol in the Archipelago
-    vessel3 = manager.add_obstacle(x=75, y=35, heading=0, speed=0.6, behavior='waypoint')
-    vessel3.set_waypoints([(75, 35), (75, 55), (55, 55), (55, 35), (75, 35)])
-    print(f"  Added {vessel3.obstacle} (Waypoint Patrol)")
+    # Removed Obstacle 2 (waypoint patrol) to reduce complexity and avoid narrow passages
     
     # Create our vessel
     print("\n" + "=" * 70)
