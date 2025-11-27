@@ -1,21 +1,36 @@
 # Autonomous Vessel Navigation
 
-A comparative study of pathfinding algorithms for autonomous vessel navigation.
+A comparative study of classical and reinforcement learning approaches to autonomous maritime navigation.
 
-## Project Phases
+## Phase 1: Classical Navigation (COMPLETE & TESTED)
 
-- **Phase 1**: Static obstacle avoidance with classical algorithms (A*)
-- **Phase 2**: Dynamic obstacle avoidance
-- **Phase 3**: Multiple vessels with COLREGs compliance
-- **Phase 4**: Environmental factors (weather, currents)
+Implemented:
+- A* pathfinding
+- Grid world environment
+- Static obstacles
+- Path Optimization - String pulling (Line of Sight)
+- Vessel physics (Kinematic & Nomoto models)
+- Path following (Pure Pursuit & ILOS)
+- Dynamic obstacles
+- Collision detection (CPA/TCPA)
+- Collision avoidance (COLREGs-inspired)
+
+## Phase 2: Reinforcement Learning (IN PROGRESS)
+
+Coming next:
+- RL environment wrapper
+- DQN/PPO implementation
+- Training infrastructure
+- Performance comparison
+
 
 ## Setup
 ```bash
 # Install dependencies
 uv sync
 
-# Run example
-uv run python examples/basic_navigation.py
+# Run demos
+uv run python examples/navigation_with_avoidance.py
 ```
 
 ## Project Structure

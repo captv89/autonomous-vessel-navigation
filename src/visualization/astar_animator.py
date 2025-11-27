@@ -88,7 +88,8 @@ class AStarAnimator:
         return self.final_path
     
     def animate(self, start: Tuple[int, int], goal: Tuple[int, int],
-                interval: int = 50, save_file: Optional[str] = None):
+                interval: int = 50, save_file: Optional[str] = None,
+                figsize: Tuple[int, int] = (12, 12)):
         """
         Create and display animation of A* search.
         
@@ -97,6 +98,7 @@ class AStarAnimator:
             goal: Goal position
             interval: Milliseconds between frames
             save_file: Optional filename to save animation (e.g., 'astar.gif')
+            figsize: Figure size as (width, height) in inches (default: (12, 12))
         """
         if len(self.frames) == 0:
             print("No frames to animate. Run find_path_animated first!")
@@ -105,7 +107,7 @@ class AStarAnimator:
         print(f"\nCreating animation with {len(self.frames)} frames...")
         
         # Create figure
-        fig, ax = plt.subplots(figsize=(12, 12))
+        fig, ax = plt.subplots(figsize=figsize)
         
         # Display grid (obstacles)
         im = ax.imshow(self.grid_world.grid, cmap='Blues', origin='lower',
@@ -135,7 +137,7 @@ class AStarAnimator:
         ax.set_xlabel('X (cells)', fontsize=12)
         ax.set_ylabel('Y (cells)', fontsize=12)
         title = ax.set_title('A* Search Animation - Frame 0', fontsize=14, fontweight='bold')
-        ax.legend(loc='upper right', fontsize=10)
+        ax.legend(loc='lower right', fontsize=10)
         ax.set_aspect('equal')
         
         # Frame counter text

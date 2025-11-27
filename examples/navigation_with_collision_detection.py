@@ -391,16 +391,16 @@ def main():
     manager = DynamicObstacleManager()
     
     # Obstacle 0: Crossing from west
-    vessel1 = manager.add_obstacle(x=5, y=50, heading=0, speed=1.0, behavior='straight')
+    vessel1 = manager.add_obstacle(x=5, y=50, heading=0, speed=0.4, behavior='straight')
     print(f"  Added {vessel1.obstacle}")
     
     # Obstacle 1: Moving north (collision course!)
-    vessel2 = manager.add_obstacle(x=40, y=10, heading=np.pi/2, speed=1.2, behavior='straight')
+    vessel2 = manager.add_obstacle(x=40, y=10, heading=np.pi/2, speed=0.3, behavior='straight')
     print(f"  Added {vessel2.obstacle}")
     
     # Obstacle 2: Circular patrol
-    vessel3 = manager.add_obstacle(x=50, y=50, heading=0, speed=1.0, behavior='circular')
-    vessel3.set_circular_path(center=(50, 50), radius=10.0)
+    vessel3 = manager.add_obstacle(x=50, y=50, heading=0, speed=0.2, behavior='circular')
+    vessel3.set_circular_path(center=(50, 50), radius=7.0)
     print(f"  Added {vessel3.obstacle} (circular)")
     
     # Create our vessel

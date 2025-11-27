@@ -34,3 +34,4 @@ models/
 # OS
 .DS_Store
 Thumbs.db
+PROJECT_STATUS.md

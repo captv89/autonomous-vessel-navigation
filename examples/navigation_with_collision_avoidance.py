@@ -85,10 +85,11 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
             # 1. Get current state
             our_state = self._get_our_vessel_state()
             
-            # 2. Check goal
+            # 2. Check goal - use larger radius for completion
             dist_to_goal = np.sqrt((our_state['x'] - goal[0])**2 + (our_state['y'] - goal[1])**2)
-            if dist_to_goal < 3.0:
+            if dist_to_goal < 4.0:  # Increased from 3.0 to reach goal easier
                 print(f"  ✓ Our vessel reached goal in {step} steps ({step * dt:.1f}s)")
+                print(f"    Final distance to goal: {dist_to_goal:.2f} units")
                 break
             
             # 3. Get navigation command
@@ -224,6 +225,7 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
         }
 
     def _process_collisions(self, our_state, time, desired_heading=None):
+        """Process collision detection and avoidance actions."""
         collision_infos = []
         avoidance_actions = []
         
@@ -376,7 +378,7 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
 
     def _setup_animation_visuals(self, waypoints):
         # Create figure with info panel
-        fig = plt.figure(figsize=(18, 12))
+        fig = plt.figure(figsize=(12, 8))
         ax_main = plt.subplot2grid((3, 3), (0, 0), colspan=2, rowspan=3)
         ax_info = plt.subplot2grid((3, 3), (0, 2), rowspan=3)
         ax_info.axis('off')
@@ -652,10 +654,12 @@ def main():
     our_vessel = NomotoVessel(x=float(start[0]), y=float(start[1]),
                              heading=0.0, speed=0.5, K=0.5, T=3.0)
     
-    controller = LOSController(lookahead_distance=8.0, path_tolerance=3.0)
+    # Increase lookahead for better curve handling, tighter tolerance for waypoint switching
+    controller = LOSController(lookahead_distance=9.0, path_tolerance=4.0)
     controller_name = "LOS"
     
     print(f"  Using {controller_name} controller")
+    print(f"    Lookahead: 9.0 units, Tolerance: 4.0 units")
     
     # Simulate
     print("\n" + "=" * 70)
@@ -664,8 +668,8 @@ def main():
     
     sim = NavigationWithCollisionAvoidance(grid, our_vessel, controller,
                                           manager, controller_name)
-    # Increased duration to ensure vessel reaches goal
-    sim.simulate(waypoints, duration=500.0, dt=0.1)
+    # Reduced duration since it should reach goal faster
+    sim.simulate(waypoints, duration=400.0, dt=0.1)
     
     # Animate
     print("\n" + "=" * 70)

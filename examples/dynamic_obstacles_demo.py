@@ -23,7 +23,7 @@ def create_scenario_1():
     grid = GridWorld(width=60, height=60, cell_size=10.0)
     
     # Add some static obstacles
-    grid.add_circular_obstacle(30, 30, radius=5)
+    grid.add_circular_obstacle(10, 30, radius=5)
     grid.add_obstacle(10, 45, width=8, height=3)
     
     # Create dynamic obstacles
@@ -71,7 +71,7 @@ def create_scenario_2():
     grid.add_obstacle(0, 0, width=80, height=10)  # South wall
     grid.add_obstacle(0, 50, width=80, height=10)  # North wall
     grid.add_obstacle(0, 10, width=10, height=40)  # West wall
-    grid.add_circular_obstacle(15, 30, radius=4)  # Buoy
+    grid.add_circular_obstacle(15, 20, radius=2)  # Buoy
     
     # Create traffic
     manager = DynamicObstacleManager()

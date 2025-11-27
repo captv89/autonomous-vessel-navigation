@@ -765,7 +765,9 @@ def demo_astar(animate: bool = False):
             print("  🔴 Red star    = Goal position")
             print("  🟡 Yellow line = Final path (shown at the end)")
             print("\nClose the window when done watching.")
-            animator.animate(start, goal, interval=30)
+            # You can customize the figure size: figsize=(width, height) in inches
+            # Example: figsize=(16, 16) for a larger window
+            animator.animate(start, goal, interval=30, figsize=(10, 8))
     else:
         # Use AStar for static plot
         from src.visualization.plotter import Plotter
