@@ -77,22 +77,16 @@ class VesselAnimator:
                 print(f"✓ Path following complete!")
                 break
             
-            # Record state
-            trajectory.append({
-                'x': x,
-                'y': y,
-                'heading': heading,
-                'speed': self.vessel.get_speed(),
-                'time': steps * dt,
-                'target_waypoint': controller.current_waypoint_idx if hasattr(controller, 'current_waypoint_idx') else controller.current_segment
-            })
-            
-            # Update vessel based on model type
+            # Update vessel based on model type and get dynamics info
             vessel_type = type(self.vessel).__name__
+            rudder_angle = 0.0
+            rudder_command = 0.0
+            rate_of_turn = 0.0
             
             if vessel_type == 'KinematicVessel':
                 # Kinematic model - direct heading control
                 self.vessel.update(dt, desired_heading=desired_heading)
+                rate_of_turn = self.vessel.state.turn_rate if hasattr(self.vessel.state, 'turn_rate') else 0.0
             
             elif vessel_type == 'NomotoVessel':
                 # Nomoto model - use rudder control
@@ -102,9 +96,27 @@ class VesselAnimator:
                 
                 # Proportional gain for rudder
                 Kp = 2.0
-                rudder_command = Kp * heading_error
+                rudder_cmd = Kp * heading_error
                 
-                self.vessel.update(dt, rudder_command=rudder_command)
+                self.vessel.update(dt, rudder_command=rudder_cmd)
+                
+                # Get actual rudder angle (may differ due to rate limiting)
+                rudder_angle = getattr(self.vessel, 'rudder_angle', rudder_cmd)
+                rudder_command = getattr(self.vessel, 'rudder_command', rudder_cmd)
+                rate_of_turn = self.vessel.get_turn_rate() if hasattr(self.vessel, 'get_turn_rate') else 0.0
+            
+            # Record state
+            trajectory.append({
+                'x': x,
+                'y': y,
+                'heading': heading,
+                'speed': self.vessel.get_speed(),
+                'time': steps * dt,
+                'target_waypoint': controller.current_waypoint_idx if hasattr(controller, 'current_waypoint_idx') else controller.current_segment,
+                'rudder_angle': rudder_angle,
+                'rudder_command': rudder_command,
+                'rate_of_turn': rate_of_turn
+            })
             
         print(f"  Simulation complete: {steps} steps ({steps * dt:.1f}s)")
         print(f"  Final position: ({self.vessel.state.x:.2f}, {self.vessel.state.y:.2f})")
@@ -181,6 +193,12 @@ class VesselAnimator:
                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
                           zorder=12)
         
+        # Dynamics text (rudder and rate of turn)
+        dynamics_text = ax.text(0.02, 0.02, '', transform=ax.transAxes,
+                               fontsize=10, verticalalignment='bottom',
+                               bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.85),
+                               zorder=12)
+        
         # Grid lines
         ax.set_xticks(np.arange(-0.5, self.grid_world.width, 5), minor=True)
         ax.set_yticks(np.arange(-0.5, self.grid_world.height, 5), minor=True)
@@ -196,12 +214,12 @@ class VesselAnimator:
         def init():
             """Initialize animation."""
             trajectory_line.set_data([], [])
-            return vessel_patch, trajectory_line, info_text
+            return vessel_patch, trajectory_line, info_text, dynamics_text
         
         def update(frame):
             """Update animation frame."""
             if frame >= len(trajectory):
-                return vessel_patch, trajectory_line, info_text
+                return vessel_patch, trajectory_line, info_text, dynamics_text
             
             state = trajectory[frame]
             x, y = state['x'], state['y']
@@ -248,7 +266,19 @@ class VesselAnimator:
                 f'Waypoint: {state["target_waypoint"]}/{len(waypoints)-1}'
             )
             
-            return vessel_patch, trajectory_line, info_text
+            # Update dynamics text (rudder cmd vs actual)
+            rudder_cmd = np.degrees(state.get('rudder_command', 0.0))
+            rudder_actual = np.degrees(state.get('rudder_angle', 0.0))
+            rudder_error = rudder_cmd - rudder_actual
+            rate_of_turn = state.get('rate_of_turn', 0.0)
+            dynamics_text.set_text(
+                f'Rudder Cmd: {rudder_cmd:+.1f}°\n'
+                f'Rudder Act: {rudder_actual:+.1f}°\n'
+                f'Rudder Err: {rudder_error:+.1f}°\n'
+                f'ROT: {np.degrees(rate_of_turn):+.2f}°/s'
+            )
+            
+            return vessel_patch, trajectory_line, info_text, dynamics_text
         
         # Create animation
         # Sample frames to speed up animation (every nth frame)

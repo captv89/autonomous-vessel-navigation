@@ -95,9 +95,14 @@ class IntegratedNavigationAnimator:
             
             # Get rudder angle and rate of turn
             rudder_angle = 0.0
+            rudder_command = 0.0
             rate_of_turn = 0.0
             if hasattr(self.our_vessel, 'rudder_angle'):
                 rudder_angle = self.our_vessel.rudder_angle
+            if hasattr(self.our_vessel, 'rudder_command'):
+                rudder_command = self.our_vessel.rudder_command
+            else:
+                rudder_command = rudder_angle  # Fallback for vessels without rate limiting
             if hasattr(self.our_vessel, 'get_turn_rate'):
                 rate_of_turn = self.our_vessel.get_turn_rate()
             
@@ -111,6 +116,7 @@ class IntegratedNavigationAnimator:
                     'speed': our_speed,
                     'target': target,
                     'rudder_angle': rudder_angle,
+                    'rudder_command': rudder_command,
                     'rate_of_turn': rate_of_turn
                 },
                 'dynamic_obstacles': []
@@ -384,11 +390,15 @@ class IntegratedNavigationAnimator:
                 f'Closest: {min_distance:.1f} units'
             )
             
-            # Dynamics text (reuse from path_animator)
-            rudder_angle = our_state.get('rudder_angle', 0.0)
+            # Dynamics text (reuse from path_animator) - show cmd vs actual rudder
+            rudder_cmd = np.degrees(our_state.get('rudder_command', 0.0))
+            rudder_actual = np.degrees(our_state.get('rudder_angle', 0.0))
+            rudder_error = rudder_cmd - rudder_actual
             rate_of_turn = our_state.get('rate_of_turn', 0.0)
             dynamics_text.set_text(
-                f'Rudder: {np.degrees(rudder_angle):+.1f}°\n'
+                f'Rudder Cmd: {rudder_cmd:+.1f}°\n'
+                f'Rudder Act: {rudder_actual:+.1f}°\n'
+                f'Rudder Err: {rudder_error:+.1f}°\n'
                 f'ROT: {np.degrees(rate_of_turn):+.2f}°/s'
             )
             

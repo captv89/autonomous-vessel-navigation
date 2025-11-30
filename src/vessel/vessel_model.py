@@ -133,7 +133,18 @@ class NomotoVessel:
         δ = rudder angle
         K = gain constant
         T = time constant
+    
+    Rudder Dynamics:
+        Real rudders have limited slew rates. Per IMO standards, rudders must
+        move from 35° to -35° (70° total) in approximately 11 seconds.
+        This gives a maximum rudder rate of ~6.36°/s (0.111 rad/s).
+        
+        The model tracks both commanded and actual rudder angles, with the
+        actual rudder moving toward the commanded position at the rate limit.
     """
+    
+    # IMO standard: 70° (35° to -35°) in 11 seconds = 6.36°/s
+    IMO_RUDDER_RATE = np.radians(70.0 / 11.0)  # ~0.111 rad/s
     
     def __init__(self,
                  x: float = 0.0,
@@ -143,7 +154,8 @@ class NomotoVessel:
                  max_speed: float = 10.0,
                  K: float = 0.3,
                  T: float = 5.0,
-                 max_rudder: float = 0.6):
+                 max_rudder: float = np.radians(35.0),  # 35° per IMO standard
+                 rudder_rate: Optional[float] = None):
         """
         Initialize Nomoto vessel.
         
@@ -156,6 +168,12 @@ class NomotoVessel:
             K: Nomoto gain constant (responsiveness)
             T: Nomoto time constant (how quickly vessel responds)
             max_rudder: Maximum rudder angle (radians)
+            rudder_rate: Maximum rudder rate in rad/s. Controls how fast the
+                        rudder can physically move.
+                        - None: Instant rudder response (legacy behavior)
+                        - 0 or negative: Use IMO standard (~0.111 rad/s, 6.36°/s)
+                        - Positive value: Use specified rate
+                        IMO standard: 70° in 11s for 35° to -35° movement.
         """
         self.state = VesselState(x, y, heading, speed, turn_rate=0.0)
         self.max_speed = max_speed
@@ -163,14 +181,27 @@ class NomotoVessel:
         self.T = T
         self.max_rudder = max_rudder
         
-        # Current rudder angle
-        self.rudder_angle = 0.0
+        # Rudder dynamics
+        if rudder_rate is None:
+            self.rudder_rate = None  # Instant rudder (backward compatible)
+        elif rudder_rate <= 0:
+            self.rudder_rate = self.IMO_RUDDER_RATE  # Use IMO standard
+        else:
+            self.rudder_rate = rudder_rate  # Use specified rate
+        
+        # Track commanded vs actual rudder position
+        self.rudder_command = 0.0   # Commanded/desired rudder angle
+        self.rudder_angle = 0.0     # Actual physical rudder angle
         
         print(f"Created NomotoVessel at ({x}, {y})")
         print(f"  Max speed: {max_speed} units/s")
         print(f"  K (gain): {K}")
         print(f"  T (time constant): {T}s")
         print(f"  Max rudder: {np.degrees(max_rudder):.1f}°")
+        if self.rudder_rate is not None:
+            print(f"  Rudder rate: {np.degrees(self.rudder_rate):.2f}°/s")
+        else:
+            print(f"  Rudder rate: Instant (no delay)")
     
     def update(self, dt: float, rudder_command: float = 0.0,
                desired_speed: Optional[float] = None):
@@ -186,13 +217,25 @@ class NomotoVessel:
         if desired_speed is not None:
             self.state.speed = np.clip(desired_speed, 0, self.max_speed)
         
-        # Limit rudder command
-        rudder_command = np.clip(rudder_command, -self.max_rudder, self.max_rudder)
-        self.rudder_angle = rudder_command
+        # Limit and store rudder command
+        self.rudder_command = np.clip(rudder_command, -self.max_rudder, self.max_rudder)
+        
+        # Apply rudder rate limiting
+        if self.rudder_rate is not None:
+            # Calculate maximum rudder change this timestep
+            max_delta = self.rudder_rate * dt
+            # Move actual rudder toward commanded position
+            rudder_error = self.rudder_command - self.rudder_angle
+            delta = np.clip(rudder_error, -max_delta, max_delta)
+            self.rudder_angle += delta
+        else:
+            # Instant rudder response (legacy behavior)
+            self.rudder_angle = self.rudder_command
         
         # Nomoto first-order model: T * dψ/dt + ψ = K * δ
         # Rearranged: dψ/dt = (K * δ - ψ) / T
-        d_turn_rate = (self.K * rudder_command - self.state.turn_rate) / self.T
+        # Uses actual rudder angle (not commanded) for realistic dynamics
+        d_turn_rate = (self.K * self.rudder_angle - self.state.turn_rate) / self.T
         
         # Update turn rate
         self.state.turn_rate += d_turn_rate * dt
@@ -224,6 +267,18 @@ class NomotoVessel:
         """Get current turn rate in rad/s."""
         return self.state.turn_rate
     
+    def get_rudder_angle(self) -> float:
+        """Get current actual rudder angle in radians."""
+        return self.rudder_angle
+    
+    def get_rudder_command(self) -> float:
+        """Get current commanded rudder angle in radians."""
+        return self.rudder_command
+    
+    def get_rudder_error(self) -> float:
+        """Get difference between commanded and actual rudder (rad)."""
+        return self.rudder_command - self.rudder_angle
+    
     def __repr__(self):
         return f"NomotoVessel({self.state})"
 
@@ -252,9 +307,9 @@ def test_vessel_models():
     print(f"Final state: {vessel_kin.state}")
     print(f"Distance traveled: {np.sqrt(vessel_kin.state.x**2 + vessel_kin.state.y**2):.2f}")
     
-    # Test 2: Nomoto vessel
+    # Test 2: Nomoto vessel (instant rudder - legacy)
     print("\n" + "=" * 70)
-    print("2. Testing Nomoto Vessel")
+    print("2. Testing Nomoto Vessel (Instant Rudder)")
     print("-" * 70)
     
     vessel_nomoto = NomotoVessel(x=0, y=0, heading=0, speed=5.0, K=0.3, T=5.0)
@@ -271,10 +326,71 @@ def test_vessel_models():
     print(f"Distance traveled: {np.sqrt(vessel_nomoto.state.x**2 + vessel_nomoto.state.y**2):.2f}")
     print(f"Turn rate: {np.degrees(vessel_nomoto.state.turn_rate):.2f}°/s")
     
+    # Test 3: Nomoto vessel with realistic rudder rate
+    print("\n" + "=" * 70)
+    print("3. Testing Nomoto Vessel (IMO Rudder Rate)")
+    print("-" * 70)
+    
+    # Use rudder_rate=0 to get IMO standard rate
+    vessel_realistic = NomotoVessel(x=0, y=0, heading=0, speed=5.0, K=0.3, T=5.0, rudder_rate=0)
+    print(f"Initial state: {vessel_realistic.state}")
+    
+    # Simulate with hard-over rudder command
+    print("\nSimulating 20 seconds with 35° (hard over) rudder command...")
+    rudder_cmd = np.radians(35)  # Hard starboard
+    
+    print("\nRudder movement over time:")
+    for i in range(200):  # 20 seconds at 0.1s timestep
+        vessel_realistic.update(dt, rudder_command=rudder_cmd)
+        # Print rudder position at key intervals
+        if i in [0, 10, 20, 30, 40, 50, 100]:
+            print(f"  t={i*dt:5.1f}s: Commanded={np.degrees(vessel_realistic.get_rudder_command()):5.1f}°, "
+                  f"Actual={np.degrees(vessel_realistic.get_rudder_angle()):5.1f}°, "
+                  f"Error={np.degrees(vessel_realistic.get_rudder_error()):5.1f}°")
+    
+    print(f"\nFinal state: {vessel_realistic.state}")
+    print(f"Distance traveled: {np.sqrt(vessel_realistic.state.x**2 + vessel_realistic.state.y**2):.2f}")
+    print(f"Turn rate: {np.degrees(vessel_realistic.state.turn_rate):.2f}°/s")
+    print(f"Rudder: Commanded={np.degrees(vessel_realistic.get_rudder_command()):.1f}°, "
+          f"Actual={np.degrees(vessel_realistic.get_rudder_angle()):.1f}°")
+    
+    # Test 4: Demonstrate rudder slew time
+    print("\n" + "=" * 70)
+    print("4. Rudder Slew Test (35° to -35°)")
+    print("-" * 70)
+    
+    vessel_slew = NomotoVessel(x=0, y=0, heading=0, speed=5.0, rudder_rate=0)
+    max_rudder_deg = np.degrees(vessel_slew.max_rudder)
+    
+    # Start at 35° starboard
+    for _ in range(150):  # Let rudder reach max starboard
+        vessel_slew.update(dt, rudder_command=np.radians(35))
+    
+    start_angle = vessel_slew.get_rudder_angle()
+    print(f"Starting position: {np.degrees(start_angle):.1f}°")
+    print(f"Target: -{max_rudder_deg:.1f}° (hard port)")
+    
+    # Command hard port and measure time
+    target_angle = -vessel_slew.max_rudder
+    steps = 0
+    while vessel_slew.get_rudder_angle() > target_angle + np.radians(0.1):  # Within 0.1° of target
+        vessel_slew.update(dt, rudder_command=np.radians(-35))
+        steps += 1
+        if steps > 200:  # Safety limit
+            break
+    
+    slew_time = steps * dt
+    total_travel = np.degrees(start_angle - vessel_slew.get_rudder_angle())
+    print(f"Final position: {np.degrees(vessel_slew.get_rudder_angle()):.1f}°")
+    print(f"Total travel: {total_travel:.1f}°")
+    print(f"Time to complete: {slew_time:.1f} seconds")
+    print(f"Expected (IMO): ~{70.0 / np.degrees(vessel_slew.rudder_rate):.1f} seconds for 70°")
+    
     print("\n" + "=" * 70)
     print("Key Differences:")
     print("  - Kinematic: Instant response to commands")
-    print("  - Nomoto: Gradual response with realistic dynamics")
+    print("  - Nomoto (instant rudder): Gradual turn response, instant rudder")
+    print("  - Nomoto (IMO rate): Realistic rudder movement + turn dynamics")
     print("=" * 70)
 
 

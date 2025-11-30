@@ -216,11 +216,15 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
 
     def _get_our_vessel_state(self):
         x, y = self.our_vessel.get_position()
+        # Get rudder info (support both old and new vessel models)
+        rudder_angle = getattr(self.our_vessel, 'rudder_angle', 0.0)
+        rudder_command = getattr(self.our_vessel, 'rudder_command', rudder_angle)
         return {
             'x': x, 'y': y,
             'heading': self.our_vessel.get_heading(),
             'speed': self.our_vessel.get_speed(),
-            'rudder_angle': getattr(self.our_vessel, 'rudder_angle', 0.0),
+            'rudder_angle': rudder_angle,
+            'rudder_command': rudder_command,
             'rate_of_turn': getattr(self.our_vessel, 'get_turn_rate', lambda: 0.0)()
         }
 
@@ -602,9 +606,14 @@ class NavigationWithCollisionAvoidance(IntegratedNavigationAnimator):
             f'{"⚠️ AVOIDING" if our_state.get("avoiding") else ""}'
         )
         
-        # Dynamics Text
+        # Dynamics Text - show both commanded and actual rudder
+        rudder_cmd = np.degrees(our_state.get('rudder_command', 0))
+        rudder_actual = np.degrees(our_state.get('rudder_angle', 0))
+        rudder_error = rudder_cmd - rudder_actual
         visuals['dynamics_text'].set_text(
-            f'Rudder: {np.degrees(our_state.get("rudder_angle", 0)):+.1f}°\n'
+            f'Rudder Cmd: {rudder_cmd:+.1f}°\n'
+            f'Rudder Act: {rudder_actual:+.1f}°\n'
+            f'Rudder Err: {rudder_error:+.1f}°\n'
             f'ROT: {np.degrees(our_state.get("rate_of_turn", 0)):+.2f}°/s'
         )
 
@@ -651,8 +660,10 @@ def main():
     print("CREATING OUR VESSEL")
     print("=" * 70)
     
+    # Use rudder_rate=0 for IMO standard rate (6.36°/s, 70° in 11s)
     our_vessel = NomotoVessel(x=float(start[0]), y=float(start[1]),
-                             heading=0.0, speed=0.5, K=0.5, T=3.0)
+                             heading=0.0, speed=0.5, K=0.5, T=3.0,
+                             rudder_rate=0)  # IMO standard rudder rate
     
     # Increase lookahead for better curve handling, tighter tolerance for waypoint switching
     controller = LOSController(lookahead_distance=9.0, path_tolerance=4.0)
@@ -660,6 +671,7 @@ def main():
     
     print(f"  Using {controller_name} controller")
     print(f"    Lookahead: 9.0 units, Tolerance: 4.0 units")
+    print(f"    Rudder rate: IMO standard (6.36°/s)")
     
     # Simulate
     print("\n" + "=" * 70)
@@ -681,7 +693,8 @@ def main():
     print("  📊 Right panel: Real-time collision & avoidance info")
     print("  🔴 Red dashed lines: CPA points")
     print("  ❌ Red X markers: Collision points (if any)")
-    print("\nWatch for avoidance maneuvers!")
+    print("  ⚙️  Rudder dynamics: Cmd vs Actual (IMO rate limited)")
+    print("\nWatch for avoidance maneuvers and rudder lag!")
     print("=" * 70)
     
     sim.animate(waypoints, interval=5)

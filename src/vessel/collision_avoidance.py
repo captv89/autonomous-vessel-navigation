@@ -590,9 +590,9 @@ class CollisionAvoidance:
         # Lookahead based on speed, but at least 20m
         lookahead_dist = max(speed * 15.0, 20.0)
         
-        # Cast rays: Center, Port (-20°), Starboard (+20°)
+        # Cast rays: Center, Port (-30°), Starboard (+30°)
         # Using wider whiskers to detect land masses earlier
-        angles = [0, np.radians(20), -np.radians(20)]
+        angles = [0, np.radians(30), -np.radians(30)]
         distances = []
         
         for angle in angles:

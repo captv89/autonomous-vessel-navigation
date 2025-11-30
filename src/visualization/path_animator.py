@@ -134,6 +134,7 @@ class PathAnimator:
             
             # Update vessel based on type
             rudder_angle = 0.0
+            rudder_command = 0.0
             rate_of_turn = 0.0
             
             if vessel_type == 'NomotoVessel':
@@ -150,8 +151,11 @@ class PathAnimator:
                 rudder_command = (Kp * heading_error) - (Kd * yaw_rate)
                 vessel.update(dt, rudder_command=rudder_command)
                 
-                # Get rudder angle and rate of turn from vessel
+                # Get actual rudder angle from vessel (may differ due to rate limiting)
                 rudder_angle = vessel.rudder_angle if hasattr(vessel, 'rudder_angle') else rudder_command
+                # Get commanded rudder (what we requested)
+                if hasattr(vessel, 'rudder_command'):
+                    rudder_command = vessel.rudder_command
                 rate_of_turn = yaw_rate
             elif vessel_type == 'KinematicVessel':
                 vessel.update(dt, desired_heading=desired_heading)
@@ -167,6 +171,7 @@ class PathAnimator:
                 'target': target,
                 'desired_heading': desired_heading,
                 'rudder_angle': rudder_angle,
+                'rudder_command': rudder_command,
                 'rate_of_turn': rate_of_turn,
                 'cross_track_error': cross_track_error
             })
@@ -361,9 +366,14 @@ class PathAnimator:
                     f'Distance: {anim["distance_traveled"]:.1f} units'
                 )
                 
-                # Update dynamics text (bottom left - rudder, ROT, CTE)
+                # Update dynamics text (bottom left - rudder cmd/actual, ROT, CTE)
+                rudder_cmd = np.degrees(state.get('rudder_command', 0.0))
+                rudder_actual = np.degrees(rudder_angle)
+                rudder_error = rudder_cmd - rudder_actual
                 anim['dynamics_text'].set_text(
-                    f'Rudder: {np.degrees(rudder_angle):+.1f}°\n'
+                    f'Rudder Cmd: {rudder_cmd:+.1f}°\n'
+                    f'Rudder Act: {rudder_actual:+.1f}°\n'
+                    f'Rudder Err: {rudder_error:+.1f}°\n'
                     f'ROT: {np.degrees(rate_of_turn):+.2f}°/s\n'
                     f'CTE: {cross_track_error:.2f} units'
                 )
