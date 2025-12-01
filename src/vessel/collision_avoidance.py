@@ -9,8 +9,24 @@ Implements avoidance maneuvers when collision risk is detected:
 """
 
 import numpy as np
+import logging
+import os
 from typing import Tuple, Optional, List, Dict
 from dataclasses import dataclass
+
+# Set up file-based logging for debug
+_log_file = os.path.join(os.path.dirname(__file__), '..', '..', 'collision_avoidance_debug.log')
+_ca_logger = logging.getLogger('collision_avoidance')
+_ca_logger.setLevel(logging.DEBUG)
+_ca_logger.handlers = []
+_file_handler = logging.FileHandler(_log_file, mode='w')
+_file_handler.setFormatter(logging.Formatter('%(message)s'))
+_ca_logger.addHandler(_file_handler)
+_ca_logger.propagate = False
+
+def _log(msg: str):
+    """Log to file only."""
+    _ca_logger.debug(msg)
 
 
 @dataclass
@@ -54,57 +70,108 @@ class CandidateManeuver:
 
 class CollisionAvoidance:
     """
-    Implements collision avoidance strategies.
+    Implements collision avoidance strategies with dynamics-aware prediction.
+    
+    Features:
+    - Predictive trajectory simulation using Nomoto vessel dynamics
+    - Maneuver commitment to prevent oscillation (S-shaped tracks)
+    - Graduated response (try small course changes before hard-over)
+    - Continuous risk re-assessment during committed maneuvers
+    - Automatic return to track when danger clears
     """
+    
+    # IMO standard rudder rate: 70° in 11 seconds
+    IMO_RUDDER_RATE = np.radians(70.0 / 11.0)  # ~0.111 rad/s (6.36°/s)
     
     def __init__(self, 
                  safe_distance: float = 8.0,
                  warning_distance: float = 15.0,
                  avoidance_angle: float = np.radians(30),
-                 grid_world=None):
+                 grid_world=None,
+                 # Vessel dynamics parameters for prediction
+                 vessel_K: float = 0.3,
+                 vessel_T: float = 5.0,
+                 rudder_rate: Optional[float] = None,
+                 max_rudder: float = np.radians(35.0)):
         """
-        Initialize collision avoidance.
+        Initialize collision avoidance with dynamics-aware prediction.
         
         Args:
             safe_distance: Minimum safe distance
             warning_distance: Distance to start avoiding
             avoidance_angle: Standard course alteration angle (radians)
             grid_world: Optional GridWorld object for static obstacle checking
+            vessel_K: Nomoto gain constant (responsiveness)
+            vessel_T: Nomoto time constant (how quickly vessel responds)
+            rudder_rate: Maximum rudder rate (rad/s). None=instant, 0=IMO standard
+            max_rudder: Maximum rudder angle (radians)
         """
         self.safe_distance = safe_distance
         self.warning_distance = warning_distance
         self.avoidance_angle = avoidance_angle
         self.grid_world = grid_world
         
+        # Vessel dynamics for trajectory prediction
+        self.vessel_K = vessel_K
+        self.vessel_T = vessel_T
+        self.max_rudder = max_rudder
+        if rudder_rate is None:
+            self.rudder_rate = None  # Instant rudder (legacy)
+        elif rudder_rate <= 0:
+            self.rudder_rate = self.IMO_RUDDER_RATE
+        else:
+            self.rudder_rate = rudder_rate
+        
         # State tracking
         self.active_avoidance = False
         self.avoided_vessels = set()  # Track which vessels we're avoiding
         self.original_speed = None
         
+        # Maneuver commitment state (prevents oscillation)
+        self.committed_maneuver = None      # Current committed AvoidanceAction
+        self.committed_absolute_heading = None  # ABSOLUTE target heading (not relative!)
+        self.commit_start_time = None       # When commitment started
+        self.commit_duration = 12.0         # Base duration - vessel needs time to respond!
+        self.predicted_cpa_at_commit = None # CPA predicted when maneuver was committed
+        self.predicted_tcpa_at_commit = None
+        self.return_to_track_heading = None # Original desired heading to return to
+        self.last_min_cpa = float('inf')    # Track if CPA is improving
+        
+        # Current vessel state (updated externally)
+        self.current_turn_rate = 0.0
+        self.current_rudder = 0.0
+        
         # Define candidate maneuvers for predictive search
         self.candidates = self._generate_candidates()
 
     def _generate_candidates(self) -> List[CandidateManeuver]:
-        """Generate a set of candidate maneuvers to evaluate."""
+        """
+        Generate candidate course alterations for predictive evaluation.
+        
+        COURSE CHANGES ONLY - no speed adjustments.
+        Speed adjustments don't change CPA geometry, they only delay TCPA.
+        A proper avoidance maneuver changes the geometry of the encounter.
+        
+        Uses graduated steps to find MINIMUM effective course change:
+        - Fine steps (5°, 10°, 15°) for early/mild avoidance
+        - Medium steps (20°, 25°, 30°) for moderate avoidance  
+        - Large steps (40°, 50°, 60°) for emergency avoidance
+        
+        COLREGs preference: Starboard turns tried first (Rule 14, 15, 17).
+        """
         candidates = []
         
-        # 1. Maintain course (baseline)
+        # 1. Maintain course (baseline - if safe, don't turn!)
         candidates.append(CandidateManeuver(0.0, 1.0, reason="Maintain course"))
         
-        # 2. Speed adjustments
-        candidates.append(CandidateManeuver(0.0, 0.5, reason="Slow down"))
-        candidates.append(CandidateManeuver(0.0, 0.0, reason="Stop"))
-        candidates.append(CandidateManeuver(0.0, -0.5, reason="Reverse"))
-        
-        # 3. Course alterations (Starboard/Right - preferred by COLREGs)
-        for deg in [15, 30, 45, 60, 90]:
+        # 2. Graduated course alterations - Starboard FIRST (COLREGs preference)
+        # These are tried in order, so fine adjustments come before hard turns
+        for deg in [5, 10, 15, 20, 25, 30, 40, 50, 60]:
             candidates.append(CandidateManeuver(np.radians(-deg), 1.0, reason=f"Turn Stbd {deg}°"))
-            candidates.append(CandidateManeuver(np.radians(-deg), 0.5, reason=f"Turn Stbd {deg}° + Slow"))
             
-        # 4. Course alterations (Port/Left - less preferred)
-        for deg in [15, 30, 45, 60, 90]:
+        # 3. Port turns - only when starboard is blocked by land/obstacles
+        for deg in [5, 10, 15, 20, 25, 30, 40, 50, 60]:
             candidates.append(CandidateManeuver(np.radians(deg), 1.0, reason=f"Turn Port {deg}°"))
-            candidates.append(CandidateManeuver(np.radians(deg), 0.5, reason=f"Turn Port {deg}° + Slow"))
             
         return candidates
 
@@ -430,15 +497,22 @@ class CollisionAvoidance:
                        desired_speed: float,
                        avoidance_actions: List[AvoidanceAction]) -> Tuple[float, float]:
         """
-        Apply avoidance actions to modify desired heading and speed.
+        Apply avoidance actions to modify desired heading.
+        
+        COURSE CHANGES ONLY - speed remains unchanged.
+        Speed adjustments don't change CPA geometry, they only delay the problem.
+        
+        IMPORTANT: Uses committed_absolute_heading if available, otherwise
+        computes from desired_heading + heading_change. This ensures we
+        maintain a consistent avoidance heading throughout the maneuver.
         
         Args:
             desired_heading: Original desired heading from path follower
             desired_speed: Original desired speed
-            avoidance_actions: List of avoidance actions from all obstacles
+            avoidance_actions: List of avoidance actions
             
         Returns:
-            Tuple of (modified_heading, modified_speed)
+            Tuple of (modified_heading, original_speed)
         """
         if not avoidance_actions:
             self.active_avoidance = False
@@ -446,38 +520,19 @@ class CollisionAvoidance:
         
         self.active_avoidance = True
         
+        # If we have a committed absolute heading, USE IT!
+        # This is the key to preventing S-tracks - maintain ONE consistent heading
+        if self.committed_absolute_heading is not None:
+            return self.committed_absolute_heading, desired_speed
+        
+        # Fallback: compute from action (should rarely happen now)
         # Sort by priority (highest first)
         avoidance_actions.sort(key=lambda x: x.priority, reverse=True)
         
         # Take the highest priority action
         primary_action = avoidance_actions[0]
-        
-        # Check for conflicting high-priority actions (e.g. Land vs Ship)
-        # If we have multiple high priority actions (>=3) with opposing heading changes
-        high_prio_actions = [a for a in avoidance_actions if a.priority >= 3]
-        if len(high_prio_actions) > 1:
-            turns = [a.heading_change for a in high_prio_actions if abs(a.heading_change) > 0.1]
-            if any(t > 0 for t in turns) and any(t < 0 for t in turns):
-                # Conflict detected! (e.g. Turn Left for Land, Turn Right for Ship)
-                # Safest action is to STOP/REVERSE and maintain heading (or turn to avoid Land if critical)
-                
-                # If one is Priority 4 (Critical Land), we must respect it, but maybe stop too
-                critical_land = next((a for a in high_prio_actions if a.priority >= 4), None)
-                
-                if critical_land:
-                    # We must turn to avoid land, but also stop to avoid ship
-                    primary_action = critical_land
-                    primary_action.speed_factor = -0.5 # Force reverse
-                    primary_action.reason += " + CONFLICT! Reversing"
-                else:
-                    # Just conflicting dynamic/static risks
-                    primary_action = AvoidanceAction(
-                        'emergency', 0.0, -0.5, "CONFLICTING AVOIDANCE! Reversing", 5
-                    )
-                    # Insert at beginning so it's logged as primary
-                    avoidance_actions.insert(0, primary_action)
 
-        # Apply heading change
+        # Apply heading change only
         modified_heading = desired_heading
         if primary_action.type in ['alter_course', 'emergency']:
             modified_heading = desired_heading + primary_action.heading_change
@@ -485,22 +540,8 @@ class CollisionAvoidance:
             modified_heading = np.arctan2(np.sin(modified_heading),
                                          np.cos(modified_heading))
         
-        # Apply speed change
-        # Take minimum speed factor from all high-priority actions
-        # If we are reversing (negative speed factor), ensure we use that
-        speed_factors = [action.speed_factor for action in avoidance_actions 
-                        if action.priority >= primary_action.priority - 1]
-        
-        min_speed_factor = min(speed_factors)
-        
-        # If any action requires reverse, we reverse
-        if min_speed_factor < 0:
-             modified_speed = desired_speed * min_speed_factor # This might be positive if desired_speed is negative? No, desired_speed is usually positive.
-             # If desired_speed is positive, modified_speed becomes negative (Reverse)
-        else:
-             modified_speed = desired_speed * min_speed_factor
-        
-        return modified_heading, modified_speed
+        # Keep speed unchanged - course changes are what matter!
+        return modified_heading, desired_speed
     
     def should_resume_path(self,
                           collision_infos: List,
@@ -524,6 +565,520 @@ class CollisionAvoidance:
                 return True
         
         return False
+
+    def get_avoidance_action(self,
+                            current_time: float,
+                            our_pos: Tuple[float, float],
+                            our_heading: float,
+                            our_speed: float,
+                            current_turn_rate: float,
+                            current_rudder: float,
+                            obstacles: List[Dict],
+                            collision_infos: List[Dict],
+                            desired_heading: float) -> Tuple[Optional[AvoidanceAction], bool]:
+        """
+        HOLISTIC collision avoidance with STRICT commitment.
+        """
+        # Update internal dynamics state
+        self.current_turn_rate = current_turn_rate
+        self.current_rudder = current_rudder
+        
+        # Calculate current situation from ALL obstacles
+        current_min_cpa = float('inf')
+        current_min_tcpa = float('inf')
+        max_risk = 0
+        
+        for info_dict in collision_infos:
+            info = info_dict['info']
+            if info.cpa_distance < current_min_cpa:
+                current_min_cpa = info.cpa_distance
+            if info.tcpa > 0 and info.tcpa < current_min_tcpa:
+                current_min_tcpa = info.tcpa
+            max_risk = max(max_risk, info.risk_level)
+        
+        _log(f"\n=== t={current_time:.1f}s === pos=({our_pos[0]:.1f},{our_pos[1]:.1f}) hdg={np.degrees(our_heading):.1f}° spd={our_speed:.1f}")
+        _log(f"  min_cpa={current_min_cpa:.1f} min_tcpa={current_min_tcpa:.1f} max_risk={max_risk}")
+        _log(f"  committed_maneuver={self.committed_maneuver}")
+        _log(f"  committed_absolute_heading={np.degrees(self.committed_absolute_heading) if self.committed_absolute_heading else None}")
+        _log(f"  commit_start_time={self.commit_start_time} commit_duration={self.commit_duration}")
+        
+        # --- CASE 1: No risk - clear commitment and return to track ---
+        # KEY INSIGHT: We can only return to track when the obstacle has PASSED, not just
+        # when CPA has improved. Otherwise we'll turn back into the danger!
+        #
+        # Conditions for "no risk" (obstacle has truly passed):
+        # 1. All obstacles are behind us (TCPA <= 0 or TCPA = inf), OR
+        # 2. CPA is VERY safe (> warning_distance + buffer) AND TCPA is small (obstacle passing now)
+        #
+        # We do NOT return to track just because CPA improved - the improvement might be
+        # because of our avoidance maneuver, and returning will undo it!
+        
+        obstacles_behind = current_min_tcpa <= 0 or current_min_tcpa == float('inf')
+        obstacle_passing_safely = current_min_cpa > (self.warning_distance + 5.0) and current_min_tcpa < 30.0
+        
+        no_risk = obstacles_behind or obstacle_passing_safely
+        
+        if no_risk:
+            _log(f"  CASE 1: No risk (behind={obstacles_behind}, passing_safely={obstacle_passing_safely})")
+            if self.committed_maneuver is not None:
+                _log(f"    Clearing commitment, returning to track")
+                self.committed_maneuver = None
+                self.committed_absolute_heading = None
+                self.commit_start_time = None
+                self.active_avoidance = False
+                self.return_to_track_heading = None
+            _log(f"  RETURNING: None, return_to_track=True")
+            return None, True
+        
+        # --- CASE 2: Currently committed - HONOR THE COMMITMENT ---
+        # Check if the obstacle has ACTUALLY passed (not just momentary CPA improvement)
+        if self.committed_maneuver is not None and self.commit_start_time is not None:
+            time_in_commit = current_time - self.commit_start_time
+            _log(f"  CASE 2: Committed - time_in_commit={time_in_commit:.1f}s (duration={self.commit_duration}s)")
+            _log(f"    Absolute heading target: {np.degrees(self.committed_absolute_heading):.1f}°")
+            
+            # Check if we can exit commitment early because obstacle has ACTUALLY passed
+            # CRITICAL: Don't clear just because CPA improved - that might be temporary!
+            # Obstacle has passed if:
+            # 1. TCPA is negative/zero (danger is now BEHIND us), OR
+            # 2. CPA is safe AND TCPA is very large (obstacle was always far away)
+            obstacle_passed = current_min_tcpa <= 0
+            plenty_time = current_min_tcpa > 120.0  # More than 2 minutes away
+            cpa_is_safe = current_min_cpa > self.warning_distance
+            
+            can_clear_commitment = obstacle_passed or (cpa_is_safe and plenty_time)
+            
+            if can_clear_commitment:
+                _log(f"    Obstacle cleared! (tcpa={current_min_tcpa:.1f}, cpa={current_min_cpa:.1f}, passed={obstacle_passed})")
+                _log(f"    Clearing commitment, returning to track")
+                self.committed_maneuver = None
+                self.committed_absolute_heading = None
+                self.commit_start_time = None
+                self.active_avoidance = False
+                self.return_to_track_heading = None
+                return None, True
+            
+            if time_in_commit < self.commit_duration:
+                # Check if vessel has actually reached the committed heading
+                # If still turning, the CPA based on current heading is MISLEADING!
+                raw_heading_error = our_heading - self.committed_absolute_heading
+                # Normalize to [-π, π]
+                heading_error = abs((raw_heading_error + np.pi) % (2 * np.pi) - np.pi)
+                vessel_on_committed_heading = heading_error < np.radians(5.0)  # Within 5 degrees
+                
+                _log(f"    Heading error to committed: {np.degrees(heading_error):.1f}° (on_heading={vessel_on_committed_heading})")
+                
+                # Only consider override if:
+                # 1. Vessel HAS reached committed heading (so CPA calc is valid), AND
+                # 2. CPA is still dangerously low (< 1.0), AND
+                # 3. We've been committed for at least 5 seconds (give maneuver time)
+                actual_collision = (vessel_on_committed_heading and 
+                                   current_min_cpa < 1.0 and 
+                                   time_in_commit > 5.0)
+                _log(f"    Still in window. actual_collision={actual_collision} (on_hdg: {vessel_on_committed_heading}, cpa<1.0: {current_min_cpa<1.0}, time>5s: {time_in_commit>5.0})")
+                
+                # ALWAYS honor commitment unless we're ON the committed heading and still in danger
+                # Re-planning while turning doesn't help - the CPA calc doesn't reflect where we're going!
+                if not actual_collision:
+                    _log(f"  RETURNING: Keep committed maneuver {self.committed_maneuver}")
+                    return self.committed_maneuver, False
+                else:
+                    _log(f"    ACTUAL COLLISION override - vessel on committed heading but still in danger!")
+            else:
+                _log(f"    Commitment EXPIRED (time_in_commit={time_in_commit:.1f} >= {self.commit_duration}s)")
+            
+            # Commitment expired or actual collision - clear and re-plan
+            _log(f"    Clearing commitment, will replan")
+            self.committed_maneuver = None
+            self.committed_absolute_heading = None
+            self.commit_start_time = None
+        
+        # --- CASE 3: Need to find a maneuver ---
+        _log(f"  CASE 3: Finding new maneuver")
+        
+        # Store original heading for return-to-track AND use it for avoidance calculation
+        if self.return_to_track_heading is None:
+            self.return_to_track_heading = desired_heading
+            _log(f"    Stored return_to_track_heading={np.degrees(desired_heading):.1f}°")
+        
+        # Project 5 minutes ahead
+        projection_time = 300.0
+        
+        # Find the best course change
+        best_action = self._find_minimum_safe_course_change(
+            our_pos=our_pos,
+            our_heading=our_heading,
+            our_speed=our_speed,
+            obstacles=obstacles,
+            desired_heading=self.return_to_track_heading,
+            projection_time=projection_time,
+            current_turn_rate=current_turn_rate,
+            current_rudder=current_rudder
+        )
+        
+        if best_action:
+            # COMMIT to this course change
+            self.committed_maneuver = best_action
+            self.commit_start_time = current_time
+            
+            # Calculate and store ABSOLUTE target heading
+            # This is the key fix: avoidance heading = return_to_track + heading_change
+            self.committed_absolute_heading = self.return_to_track_heading + best_action.heading_change
+            self.committed_absolute_heading = np.arctan2(
+                np.sin(self.committed_absolute_heading),
+                np.cos(self.committed_absolute_heading)
+            )
+            _log(f"    Calculated absolute heading: {np.degrees(self.return_to_track_heading):.1f}° + {np.degrees(best_action.heading_change):.1f}° = {np.degrees(self.committed_absolute_heading):.1f}°")
+            
+            # Commit duration: longer for bigger turns (vessel needs time)
+            turn_magnitude = abs(best_action.heading_change)
+            if turn_magnitude < np.radians(15):
+                self.commit_duration = 15.0  # Small turn
+            elif turn_magnitude < np.radians(30):
+                self.commit_duration = 25.0  # Medium turn
+            else:
+                self.commit_duration = 35.0  # Large turn - needs lots of time
+            
+            self.predicted_cpa_at_commit = current_min_cpa
+            self.active_avoidance = True
+            
+            _log(f"  NEW COMMITMENT: {best_action}")
+            _log(f"    commit_start_time={self.commit_start_time}, duration={self.commit_duration}s")
+            _log(f"  RETURNING: {best_action}")
+            return best_action, False
+        
+        # Fallback: static obstacle check
+        _log(f"  No dynamic solution, checking static obstacles")
+        static_action = self.check_static_obstacles(our_pos, our_heading, our_speed)
+        if static_action:
+            self.committed_maneuver = static_action
+            self.commit_start_time = current_time
+            self.commit_duration = 20.0
+            self.active_avoidance = True
+            _log(f"  STATIC ACTION: {static_action}")
+            return static_action, False
+        
+        _log(f"  RETURNING: None (no action found)")
+        return None, False
+
+    def _find_minimum_safe_course_change(self,
+                                         our_pos: Tuple[float, float],
+                                         our_heading: float,
+                                         our_speed: float,
+                                         obstacles: List[Dict],
+                                         desired_heading: float,
+                                         projection_time: float,
+                                         current_turn_rate: float,
+                                         current_rudder: float) -> Optional[AvoidanceAction]:
+        """
+        Find the MINIMUM course change that achieves safe CPA with ALL obstacles.
+        
+        NEW APPROACH: Two-phase trajectory simulation
+        Phase 1: Turn to avoidance heading, maintain until dynamic obstacle clears
+        Phase 2: Return to track (desired_heading) - must not hit static obstacles
+        
+        A course is SAFE if:
+        - Phase 1: Maintains safe distance from dynamic obstacles AND doesn't hit land
+        - Phase 2: Returns to track without hitting land
+        """
+        _log(f"    _find_minimum_safe_course_change: evaluating {len(self.candidates)} candidates")
+        _log(f"      obstacles: {len(obstacles)}, desired_heading: {np.degrees(desired_heading):.1f}°")
+        
+        candidate_results = []
+        
+        for candidate in self.candidates:
+            # Simulate TWO-PHASE trajectory
+            is_safe, min_cpa, time_to_clear = self._simulate_two_phase_trajectory(
+                start_pos=our_pos,
+                start_heading=our_heading,
+                start_speed=our_speed,
+                avoidance_heading_change=candidate.heading_change,
+                return_heading=desired_heading,
+                obstacles=obstacles,
+                max_duration=projection_time,
+                current_turn_rate=current_turn_rate,
+                current_rudder=current_rudder
+            )
+            
+            candidate_results.append((candidate, is_safe, min_cpa, time_to_clear))
+            
+            if is_safe and min_cpa >= self.safe_distance:
+                # This is the minimum course change that works!
+                _log(f"      FOUND SAFE: {candidate.reason} -> CPA={min_cpa:.1f}, clear_time={time_to_clear:.0f}s")
+                return AvoidanceAction(
+                    type='alter_course' if abs(candidate.heading_change) > 0.01 else 'maintain',
+                    heading_change=candidate.heading_change,
+                    speed_factor=1.0,
+                    reason=f"{candidate.reason} (CPA={min_cpa:.1f})",
+                    priority=3 if abs(candidate.heading_change) < np.radians(20) else 4
+                )
+        
+        # Log all results for debugging
+        _log(f"    No safe option found. All results:")
+        for candidate, is_safe, min_cpa, time_to_clear in candidate_results:
+            _log(f"      {candidate.reason}: safe={is_safe}, CPA={min_cpa:.1f}, clear={time_to_clear:.0f}s")
+        
+        # No fully safe option - find best unsafe option (highest CPA that doesn't hit land)
+        best_unsafe_cpa = -1
+        best_unsafe_candidate = None
+        
+        for candidate, is_safe, min_cpa, time_to_clear in candidate_results:
+            # Prefer options that don't hit land (min_cpa > 0)
+            if min_cpa > best_unsafe_cpa:
+                best_unsafe_cpa = min_cpa
+                best_unsafe_candidate = candidate
+        
+        if best_unsafe_candidate and best_unsafe_cpa > 0:
+            _log(f"    BEST UNSAFE: {best_unsafe_candidate.reason} -> CPA={best_unsafe_cpa:.1f}")
+            return AvoidanceAction(
+                type='emergency',
+                heading_change=best_unsafe_candidate.heading_change,
+                speed_factor=1.0,
+                reason=f"BEST: {best_unsafe_candidate.reason} (CPA={best_unsafe_cpa:.1f})",
+                priority=5
+            )
+        
+        _log(f"    NO SOLUTION FOUND!")
+        return None
+
+    def _simulate_two_phase_trajectory(self,
+                                       start_pos: Tuple[float, float],
+                                       start_heading: float,
+                                       start_speed: float,
+                                       avoidance_heading_change: float,
+                                       return_heading: float,
+                                       obstacles: List[Dict],
+                                       max_duration: float,
+                                       current_turn_rate: float,
+                                       current_rudder: float,
+                                       dt: float = 1.0) -> Tuple[bool, float, float]:
+        """
+        Simulate TWO-PHASE avoidance trajectory:
+        
+        Phase 1: Turn to avoidance heading, maintain until ALL dynamic obstacles clear
+                 (distance > warning_distance and moving away)
+        Phase 2: Return to track heading - must be safe from static obstacles
+        
+        Returns:
+            (is_safe, minimum_CPA, time_when_obstacles_clear)
+        """
+        avoidance_heading = start_heading + avoidance_heading_change
+        
+        # Initialize vessel state
+        cx, cy = start_pos
+        heading = start_heading
+        turn_rate = current_turn_rate
+        rudder = current_rudder
+        speed = start_speed
+        
+        min_cpa = float('inf')
+        time_to_clear = max_duration
+        phase = 1  # 1 = avoiding, 2 = returning to track
+        target_heading = avoidance_heading
+        
+        steps = int(max_duration / dt)
+        
+        # PD controller gains - ship-like gentle control
+        Kp = 1.0   # Gentle proportional response
+        Kd = 1.5   # Damping to prevent overshoot
+        
+        for step in range(steps):
+            t = step * dt
+            
+            # --- Vessel Dynamics ---
+            heading_error = target_heading - heading
+            heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
+            
+            rudder_cmd = Kp * heading_error - Kd * turn_rate
+            rudder_cmd = np.clip(rudder_cmd, -self.max_rudder, self.max_rudder)
+            
+            if self.rudder_rate is not None:
+                max_delta = self.rudder_rate * dt
+                rudder_delta = np.clip(rudder_cmd - rudder, -max_delta, max_delta)
+                rudder += rudder_delta
+            else:
+                rudder = rudder_cmd
+            
+            d_turn_rate = (self.vessel_K * rudder - turn_rate) / self.vessel_T
+            turn_rate += d_turn_rate * dt
+            heading += turn_rate * dt
+            heading = np.arctan2(np.sin(heading), np.cos(heading))
+            
+            cx += speed * np.cos(heading) * dt
+            cy += speed * np.sin(heading) * dt
+            
+            # --- Check Land Collision (Static Obstacles) ---
+            if self.grid_world is not None:
+                gx, gy = int(round(cx)), int(round(cy))
+                
+                # Out of bounds is OK (open sea beyond map) - just skip land check
+                if 0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height:
+                    # Check for land with safety buffer
+                    for dx in range(-3, 4):
+                        for dy in range(-3, 4):
+                            check_x, check_y = gx + dx, gy + dy
+                            if 0 <= check_x < self.grid_world.width and 0 <= check_y < self.grid_world.height:
+                                if self.grid_world.grid[check_y, check_x] > 0.5:
+                                    dist_to_land = np.sqrt(dx**2 + dy**2)
+                                    if dist_to_land < 2.5:
+                                        return False, 0.0, t  # Hit land
+            
+            # --- Check Dynamic Obstacles ---
+            all_clear = True
+            for obs in obstacles:
+                # Predict obstacle position at this time
+                ox = obs['x'] + obs['speed'] * np.cos(obs['heading']) * t
+                oy = obs['y'] + obs['speed'] * np.sin(obs['heading']) * t
+                
+                dist = np.sqrt((cx - ox)**2 + (cy - oy)**2)
+                min_cpa = min(min_cpa, dist)
+                
+                # Check for collision
+                if dist < self.safe_distance * 0.5:
+                    return False, dist, t
+                
+                # Check if this obstacle is still a threat
+                if dist < self.warning_distance:
+                    all_clear = False
+                else:
+                    # Check if moving away (relative velocity)
+                    # Our velocity
+                    our_vx = speed * np.cos(heading)
+                    our_vy = speed * np.sin(heading)
+                    # Obstacle velocity
+                    obs_vx = obs['speed'] * np.cos(obs['heading'])
+                    obs_vy = obs['speed'] * np.sin(obs['heading'])
+                    # Relative position
+                    rel_x = ox - cx
+                    rel_y = oy - cy
+                    # Relative velocity
+                    rel_vx = obs_vx - our_vx
+                    rel_vy = obs_vy - our_vy
+                    # Closing speed (negative = closing, positive = separating)
+                    closing = (rel_x * rel_vx + rel_y * rel_vy) / (dist + 0.001)
+                    
+                    if closing < 0:  # Still closing
+                        all_clear = False
+            
+            # --- Phase Transition ---
+            if phase == 1 and all_clear and t > 10.0:
+                # All dynamic obstacles are clear - switch to Phase 2
+                phase = 2
+                target_heading = return_heading
+                time_to_clear = t
+        
+        # Trajectory is safe if we never hit anything and min_cpa >= safe_distance
+        is_safe = min_cpa >= self.safe_distance
+        return is_safe, min_cpa, time_to_clear
+
+    def _simulate_trajectory_holistic(self,
+                                      start_pos: Tuple[float, float],
+                                      start_heading: float,
+                                      start_speed: float,
+                                      course_change: float,
+                                      obstacles: List[Dict],
+                                      duration: float,
+                                      current_turn_rate: float,
+                                      current_rudder: float,
+                                      dt: float = 1.0) -> Tuple[bool, float, List[Dict]]:
+        """
+        Simulate vessel trajectory with Nomoto dynamics, checking ALL obstacles.
+        
+        Projects the vessel forward for `duration` seconds, modeling:
+        - Rudder rate limits (IMO standard)
+        - Nomoto turn dynamics (K, T parameters)
+        - Current vessel state
+        
+        Checks distance to ALL obstacles and land at each timestep.
+        
+        Returns:
+            (is_safe, minimum_CPA_to_any_obstacle, trajectory_points)
+        """
+        # Target heading after course change
+        target_heading = start_heading + course_change
+        
+        # Initialize vessel state
+        cx, cy = start_pos
+        heading = start_heading
+        turn_rate = current_turn_rate
+        rudder = current_rudder
+        speed = start_speed
+        
+        min_cpa = float('inf')
+        trajectory = []
+        
+        steps = int(duration / dt)
+        
+        # PD controller gains - ship-like gentle control
+        Kp = 1.0   # Gentle proportional response
+        Kd = 1.5   # Damping to prevent overshoot
+        
+        for step in range(steps):
+            t = step * dt
+            
+            # --- Vessel Dynamics ---
+            # Calculate heading error to target
+            heading_error = target_heading - heading
+            heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
+            
+            # PD controller for rudder command
+            rudder_cmd = Kp * heading_error - Kd * turn_rate
+            rudder_cmd = np.clip(rudder_cmd, -self.max_rudder, self.max_rudder)
+            
+            # Apply rudder rate limit
+            if self.rudder_rate is not None:
+                max_delta = self.rudder_rate * dt
+                rudder_delta = np.clip(rudder_cmd - rudder, -max_delta, max_delta)
+                rudder += rudder_delta
+            else:
+                rudder = rudder_cmd
+            
+            # Nomoto dynamics: dψ/dt = (K * δ - ψ) / T
+            d_turn_rate = (self.vessel_K * rudder - turn_rate) / self.vessel_T
+            turn_rate += d_turn_rate * dt
+            
+            # Update heading
+            heading += turn_rate * dt
+            heading = np.arctan2(np.sin(heading), np.cos(heading))
+            
+            # Update position
+            cx += speed * np.cos(heading) * dt
+            cy += speed * np.sin(heading) * dt
+            
+            trajectory.append({'x': cx, 'y': cy, 'heading': heading, 'time': t})
+            
+            # --- Check Land Collision ---
+            if self.grid_world is not None:
+                gx, gy = int(round(cx)), int(round(cy))
+                
+                # Out of bounds is OK (open sea beyond map) - just skip land check
+                if 0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height:
+                    # Check for land (with small buffer)
+                    for dx in range(-2, 3):
+                        for dy in range(-2, 3):
+                            check_x, check_y = gx + dx, gy + dy
+                            if 0 <= check_x < self.grid_world.width and 0 <= check_y < self.grid_world.height:
+                                if self.grid_world.grid[check_y, check_x] > 0.5:
+                                    dist_to_land = np.sqrt(dx**2 + dy**2)
+                                    if dist_to_land < 2.0:
+                                        return False, 0.0, trajectory
+            
+            # --- Check ALL Dynamic Obstacles ---
+            for obs in obstacles:
+                # Predict obstacle position at this time
+                ox = obs['x'] + obs['speed'] * np.cos(obs['heading']) * t
+                oy = obs['y'] + obs['speed'] * np.sin(obs['heading']) * t
+                
+                dist = np.sqrt((cx - ox)**2 + (cy - oy)**2)
+                min_cpa = min(min_cpa, dist)
+                
+                # Check if collision (within safe distance)
+                if dist < self.safe_distance * 0.5:
+                    return False, dist, trajectory
+        
+        # Trajectory is safe if min_cpa >= safe_distance
+        is_safe = min_cpa >= self.safe_distance
+        return is_safe, min_cpa, trajectory
 
     def _cast_ray(self, start_pos: Tuple[float, float], 
                   heading: float, max_dist: float) -> Optional[float]:
@@ -621,21 +1176,21 @@ class CollisionAvoidance:
             # Turn towards the side with more space
             if left_dist > right_dist:
                 # Port is clearer -> Turn Port (Left)
-                return AvoidanceAction('alter_course', np.radians(45), 0.5, 
+                return AvoidanceAction('alter_course', np.radians(45), 1.0, 
                                      f"LAND AHEAD ({center_dist:.1f}m)! Turning Port", priority)
             else:
                 # Starboard is clearer -> Turn Starboard (Right)
-                return AvoidanceAction('alter_course', -np.radians(45), 0.5, 
+                return AvoidanceAction('alter_course', -np.radians(45), 1.0, 
                                      f"LAND AHEAD ({center_dist:.1f}m)! Turning Stbd", priority)
                                      
         elif left_dist < lookahead_dist:
              # Port side blocked -> Turn Starboard (Right)
-             return AvoidanceAction('alter_course', -np.radians(30), 0.8, 
+             return AvoidanceAction('alter_course', -np.radians(30), 1.0, 
                                   f"Land on Port ({left_dist:.1f}m) - Turn Stbd", priority)
                                   
         elif right_dist < lookahead_dist:
              # Starboard side blocked -> Turn Port (Left)
-             return AvoidanceAction('alter_course', np.radians(30), 0.8, 
+             return AvoidanceAction('alter_course', np.radians(30), 1.0, 
                                   f"Land on Stbd ({right_dist:.1f}m) - Turn Port", priority)
                                   
         return None
@@ -646,9 +1201,11 @@ class CollisionAvoidance:
                           our_speed: float,
                           obstacles: List[Dict],
                           original_heading: float,
-                          time_horizon: float = 25.0) -> Optional[AvoidanceAction]:
+                          time_horizon: float = 25.0,
+                          current_turn_rate: float = 0.0,
+                          current_rudder: float = 0.0) -> Optional[AvoidanceAction]:
         """
-        Find the best avoidance maneuver by simulating trajectories.
+        Find the best avoidance maneuver by simulating trajectories with Nomoto dynamics.
         
         Args:
             our_pos: Current position (x, y)
@@ -657,6 +1214,8 @@ class CollisionAvoidance:
             obstacles: List of obstacle dicts (must contain 'x', 'y', 'heading', 'speed')
             original_heading: The heading we want to be on (to score path adherence)
             time_horizon: How far ahead to simulate (seconds)
+            current_turn_rate: Current vessel turn rate (rad/s)
+            current_rudder: Current actual rudder angle (radians)
             
         Returns:
             Best AvoidanceAction or None if no safe maneuver found
@@ -670,10 +1229,13 @@ class CollisionAvoidance:
         
         # Evaluate all candidates
         for maneuver in self.candidates:
-            # 1. Simulate trajectory
+            # 1. Simulate trajectory with dynamics
             is_safe, min_dist, trajectory = self._simulate_trajectory(
                 our_pos, our_heading, our_speed,
-                maneuver, obstacles, time_horizon
+                maneuver, obstacles, time_horizon,
+                dt=0.5,
+                current_turn_rate=current_turn_rate,
+                current_rudder=current_rudder
             )
             
             maneuver.is_safe = is_safe
@@ -747,72 +1309,124 @@ class CollisionAvoidance:
                            maneuver: CandidateManeuver,
                            obstacles: List[Dict],
                            duration: float,
-                           dt: float = 0.5) -> Tuple[bool, float, List[Dict]]:
+                           dt: float = 0.5,
+                           current_turn_rate: float = 0.0,
+                           current_rudder: float = 0.0) -> Tuple[bool, float, List[Dict]]:
         """
-        Simulate a maneuver and check for collisions.
+        Simulate a maneuver using Nomoto vessel dynamics and check for collisions.
         
+        This accurately predicts what heading changes are achievable given:
+        - Rudder rate limits (IMO standard: 6.36°/s)
+        - Nomoto turn response (T, K parameters)
+        - Current vessel state (turn rate, rudder angle)
+        
+        Args:
+            start_pos: Starting position (x, y)
+            start_heading: Starting heading (radians)
+            start_speed: Starting speed
+            maneuver: Candidate maneuver to evaluate
+            obstacles: List of obstacle dicts with x, y, heading, speed
+            duration: Simulation duration (seconds)
+            dt: Time step (seconds)
+            current_turn_rate: Current vessel turn rate (rad/s)
+            current_rudder: Current actual rudder angle (radians)
+            
         Returns:
             (is_safe, min_distance_to_any_obstacle, trajectory)
         """
-        # Apply maneuver parameters
-        sim_heading = start_heading + maneuver.heading_change
+        # Target heading we want to achieve
+        target_heading = start_heading + maneuver.heading_change
         sim_speed = start_speed * maneuver.speed_factor
         
         # If reversing, cap the speed
         if sim_speed < 0:
             sim_speed = max(sim_speed, -0.3)
         
-        # Current state
+        # Initialize vessel dynamics state
         cx, cy = start_pos
+        heading = start_heading
+        turn_rate = current_turn_rate
+        rudder = current_rudder
+        
         min_dist = float('inf')
-        trajectory = []  # Store trajectory points for scoring
+        trajectory = []
         
         steps = int(duration / dt)
         
-        # Vessel safety radius (accounts for vessel size + safety margin)
-        # Balanced at 3.0 - larger values cause over-conservative avoidance
+        # Vessel safety radius
         vessel_radius = 3.0
+        
+        # PD controller gains - ship-like gentle control
+        Kp = 1.0   # Gentle proportional response
+        Kd = 1.5   # Damping to prevent overshoot
         
         for i in range(steps):
             t = (i + 1) * dt
             
-            # Update our position (simple kinematic model)
-            cx += sim_speed * np.cos(sim_heading) * dt
-            cy += sim_speed * np.sin(sim_heading) * dt
+            # --- NOMOTO DYNAMICS SIMULATION ---
+            
+            # 1. Compute rudder command using PD controller to achieve target heading
+            heading_error = target_heading - heading
+            # Normalize to [-π, π]
+            heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
+            
+            # PD control: rudder_cmd = Kp * error - Kd * turn_rate
+            rudder_cmd = Kp * heading_error - Kd * turn_rate
+            rudder_cmd = np.clip(rudder_cmd, -self.max_rudder, self.max_rudder)
+            
+            # 2. Apply rudder rate limiting
+            if self.rudder_rate is not None:
+                max_delta = self.rudder_rate * dt
+                rudder_error = rudder_cmd - rudder
+                delta = np.clip(rudder_error, -max_delta, max_delta)
+                rudder += delta
+            else:
+                rudder = rudder_cmd
+            
+            # 3. Nomoto first-order model: T * dr/dt + r = K * δ
+            # Rearranged: dr/dt = (K * δ - r) / T
+            d_turn_rate = (self.vessel_K * rudder - turn_rate) / self.vessel_T
+            turn_rate += d_turn_rate * dt
+            
+            # 4. Update heading
+            heading += turn_rate * dt
+            heading = np.arctan2(np.sin(heading), np.cos(heading))
+            
+            # 5. Update position
+            cx += sim_speed * np.cos(heading) * dt
+            cy += sim_speed * np.sin(heading) * dt
             
             # Store trajectory point
-            trajectory.append({'x': cx, 'y': cy, 'heading': sim_heading})
+            trajectory.append({
+                'x': cx, 'y': cy, 'heading': heading, 
+                'turn_rate': turn_rate, 'rudder': rudder
+            })
             
-            # 1. Check Static Obstacles (Land) - CRITICAL CHECK
+            # --- COLLISION CHECKS ---
+            
+            # 1. Check Static Obstacles (Land)
             if self.grid_world:
-                # Check all integer grid cells within vessel radius
-                # This ensures we don't miss any land cells
                 cx_int, cy_int = int(round(cx)), int(round(cy))
                 radius_cells = int(np.ceil(vessel_radius))
                 
-                # Check a square grid around the vessel
                 for dx in range(-radius_cells, radius_cells + 1):
                     for dy in range(-radius_cells, radius_cells + 1):
                         gx = cx_int + dx
                         gy = cy_int + dy
                         
-                        # Check if this grid cell is within vessel radius
                         cell_dist = np.sqrt(dx**2 + dy**2)
                         if cell_dist > vessel_radius:
                             continue
                         
-                        # Check bounds
                         if (gx < 0 or gx >= self.grid_world.width or 
                             gy < 0 or gy >= self.grid_world.height):
-                            return False, 0.0, trajectory  # Out of bounds = grounding
+                            return False, 0.0, trajectory
                             
-                        # Check for land
                         if self.grid_world.grid[gy, gx] > 0.5:
-                            return False, 0.0, trajectory  # Hit land = grounding
+                            return False, 0.0, trajectory
             
             # 2. Check Dynamic Obstacles
             for obs in obstacles:
-                # Predict obstacle position (constant velocity assumption)
                 ox = obs['x'] + obs['speed'] * np.cos(obs['heading']) * t
                 oy = obs['y'] + obs['speed'] * np.sin(obs['heading']) * t
                 
@@ -820,7 +1434,7 @@ class CollisionAvoidance:
                 min_dist = min(min_dist, dist)
                 
                 if dist < self.safe_distance:
-                    return False, dist, trajectory # Collision with vessel
+                    return False, dist, trajectory
                     
         return True, min_dist, trajectory
 
@@ -843,8 +1457,8 @@ class CollisionAvoidance:
         
         # 1b. LAND PROXIMITY PENALTY - Check trajectory for land hazards
         # MAXIMUM SEVERITY - absolutely prevent approaching coastlines
+        land_penalty_total = 0.0  # Initialize outside the if block
         if maneuver.trajectory and self.grid_world:
-            land_penalty_total = 0.0
             for point in maneuver.trajectory[::3]:  # Check every 3rd point (more frequent)
                 gx, gy = int(point['x']), int(point['y'])
                 if 0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height:
@@ -877,17 +1491,26 @@ class CollisionAvoidance:
             # Allow more deviation when avoiding
             score -= heading_deviation * 5.0
         
-        # 3. COLREGs Compliance - REMOVED
-        # Safety overrides COLREGs - if starboard leads to grounding, turn port
-        # The land proximity penalties will ensure safe maneuvers are chosen
-        # No preference for starboard turns when near coastlines
+        # 3. COLREGs Compliance - Prefer starboard turns when safe from land
+        # Only apply if land penalty is low (not near coastline)
+        if land_penalty_total < 100:  # Not near land
+            if maneuver.heading_change < 0:  # Starboard turn (negative = right)
+                score += 15.0  # Bonus for COLREGs-compliant starboard turn
+            elif maneuver.heading_change > 0:  # Port turn
+                score -= 10.0  # Small penalty for port turn
         
-        # 4. Efficiency
-        # Penalize speed reduction
+        # 4. STRONGLY prefer course changes over speed reduction
+        # Course changes modify CPA geometry; speed changes only delay TCPA
+        if abs(maneuver.heading_change) > np.radians(5):
+            score += 25.0  # Significant bonus for actual course change
+        
+        # 5. Penalize speed reduction - it rarely solves the problem
         if maneuver.speed_factor < 1.0:
-            score -= (1.0 - maneuver.speed_factor) * 30.0
-        if maneuver.speed_factor < 0: # Reversing
-            score -= 150.0  # Heavy penalty for reversing
+            score -= (1.0 - maneuver.speed_factor) * 50.0  # Higher penalty!
+        if maneuver.speed_factor <= 0.3:  # Near stop
+            score -= 80.0  # Heavy penalty - stopping rarely helps
+        if maneuver.speed_factor < 0:  # Reversing
+            score -= 200.0  # Massive penalty
             
         return score
 def test_collision_avoidance():
