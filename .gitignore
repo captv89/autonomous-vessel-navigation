@@ -35,3 +35,4 @@ models/
 .DS_Store
 Thumbs.db
 PROJECT_STATUS.md
+.github/copilot-instructions.md
