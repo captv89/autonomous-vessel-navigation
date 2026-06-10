@@ -137,11 +137,25 @@ class LOSController:
         if self.current_wp_idx == 0:
             self.current_wp_idx = 1
         
-        # 2. Normal Switching Logic (Circle of Acceptance)
+        # 2. Normal Switching Logic (Circle of Acceptance OR along-track
+        # progress). The progress check is essential: a vessel that misses
+        # the acceptance circle (e.g. while avoiding traffic) would
+        # otherwise track the segment's infinite extension forever.
         goal_wp = waypoints[self.current_wp_idx]
         dist_to_goal = np.hypot(goal_wp[0] - vessel_pos[0], goal_wp[1] - vessel_pos[1])
-        
-        if dist_to_goal < self.radius:
+
+        prev_wp = waypoints[self.current_wp_idx - 1]
+        seg_dx = goal_wp[0] - prev_wp[0]
+        seg_dy = goal_wp[1] - prev_wp[1]
+        seg_len = np.hypot(seg_dx, seg_dy)
+        if seg_len > 1e-6:
+            along_track = ((vessel_pos[0] - prev_wp[0]) * seg_dx +
+                           (vessel_pos[1] - prev_wp[1]) * seg_dy) / seg_len
+        else:
+            along_track = 0.0
+        passed_segment_end = along_track >= seg_len
+
+        if dist_to_goal < self.radius or passed_segment_end:
             if self.current_wp_idx < len(waypoints) - 1:
                 self.current_wp_idx += 1
                 self.sigma = 0.0  # Reset integral on waypoint switch

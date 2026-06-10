@@ -5,7 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "gymnasium>=1.0",
     "matplotlib>=3.10.7",
     "numpy>=2.3.5",
     "pygame>=2.6.1",
+    "pyyaml>=6.0",
+    "scipy>=1.14",
+    "stable-baselines3>=2.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
 ]

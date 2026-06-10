@@ -6,8 +6,12 @@ Implements different levels of vessel dynamics:
 2. Nomoto model - Realistic turning dynamics
 """
 
+import logging
+
 import numpy as np
 from typing import Tuple, Optional
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 
 
@@ -65,9 +69,7 @@ class KinematicVessel:
         self.max_speed = max_speed
         self.max_turn_rate = max_turn_rate
         
-        print(f"Created KinematicVessel at ({x}, {y})")
-        print(f"  Max speed: {max_speed} units/s")
-        print(f"  Max turn rate: {np.degrees(max_turn_rate):.1f}°/s")
+        logger.debug("Created KinematicVessel at (%.1f, %.1f)", x, y)
     
     def update(self, dt: float, desired_heading: Optional[float] = None,
                desired_speed: Optional[float] = None):
@@ -193,15 +195,7 @@ class NomotoVessel:
         self.rudder_command = 0.0   # Commanded/desired rudder angle
         self.rudder_angle = 0.0     # Actual physical rudder angle
         
-        print(f"Created NomotoVessel at ({x}, {y})")
-        print(f"  Max speed: {max_speed} units/s")
-        print(f"  K (gain): {K}")
-        print(f"  T (time constant): {T}s")
-        print(f"  Max rudder: {np.degrees(max_rudder):.1f}°")
-        if self.rudder_rate is not None:
-            print(f"  Rudder rate: {np.degrees(self.rudder_rate):.2f}°/s")
-        else:
-            print(f"  Rudder rate: Instant (no delay)")
+        logger.debug("Created NomotoVessel at (%.1f, %.1f) K=%.2f T=%.1f", x, y, K, T)
     
     def update(self, dt: float, rudder_command: float = 0.0,
                desired_speed: Optional[float] = None):

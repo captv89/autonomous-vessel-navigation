@@ -5,7 +5,13 @@ Finds the shortest path between two points while avoiding obstacles.
 Includes advanced post-processing for smooth vessel trajectories.
 """
 
+import logging
+
+import logging
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 from typing import List, Tuple, Optional, Dict
 import heapq
 from dataclasses import dataclass, field
@@ -402,10 +408,10 @@ class AStar:
         # This inflated grid is used for pathfinding to avoid obstacles
         # The original grid is still used for actual collision detection
         if safety_margin_cells > 0:
-            print(f"A* using safety margin: {safety_margin_cells} cells ({safety_margin_cells * grid_world.cell_size:.1f}m)")
+            logger.debug("A* using safety margin: %d cells", safety_margin_cells)
             self.planning_grid = grid_world.get_planning_grid(safety_margin_cells)
         else:
-            print("A* using no safety margin (not recommended)")
+            logger.debug("A* using no safety margin (not recommended)")
             self.planning_grid = grid_world.grid
         
         # Costs for movement
@@ -542,13 +548,13 @@ class AStar:
         if (start[0] < 0 or start[0] >= self.grid_world.width or
             start[1] < 0 or start[1] >= self.grid_world.height or
             self.planning_grid[start[1], start[0]] > 0.5):
-            print(f"❌ Start position {start} is not valid or too close to obstacles!")
+            logger.warning("A*: start position %s is invalid or too close to obstacles", start)
             return None
         
         if (goal[0] < 0 or goal[0] >= self.grid_world.width or
             goal[1] < 0 or goal[1] >= self.grid_world.height or
             self.planning_grid[goal[1], goal[0]] > 0.5):
-            print(f"❌ Goal position {goal} is not valid or too close to obstacles!")
+            logger.warning("A*: goal position %s is invalid or too close to obstacles", goal)
             return None
         
         if verbose:

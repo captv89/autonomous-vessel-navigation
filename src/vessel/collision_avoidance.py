@@ -14,18 +14,9 @@ import os
 from typing import Tuple, Optional, List, Dict
 from dataclasses import dataclass
 
-# Set up file-based logging for debug
-_log_file = os.path.join(os.path.dirname(__file__), '..', '..', 'collision_avoidance_debug.log')
-_ca_logger = logging.getLogger('collision_avoidance')
-_ca_logger.setLevel(logging.DEBUG)
-_ca_logger.handlers = []
-_file_handler = logging.FileHandler(_log_file, mode='w')
-_file_handler.setFormatter(logging.Formatter('%(message)s'))
-_ca_logger.addHandler(_file_handler)
-_ca_logger.propagate = False
+_ca_logger = logging.getLogger(__name__)
 
 def _log(msg: str):
-    """Log to file only."""
     _ca_logger.debug(msg)
 
 
@@ -632,10 +623,16 @@ class CollisionAvoidance:
         
         # --- CASE 2: Currently committed - HONOR THE COMMITMENT ---
         # Check if the obstacle has ACTUALLY passed (not just momentary CPA improvement)
+        if self.committed_maneuver is not None and self.committed_absolute_heading is None:
+            # Defensive: a commitment without an absolute heading target is
+            # unusable - clear it and re-plan below.
+            self.committed_maneuver = None
+            self.commit_start_time = None
         if self.committed_maneuver is not None and self.commit_start_time is not None:
             time_in_commit = current_time - self.commit_start_time
             _log(f"  CASE 2: Committed - time_in_commit={time_in_commit:.1f}s (duration={self.commit_duration}s)")
-            _log(f"    Absolute heading target: {np.degrees(self.committed_absolute_heading):.1f}°")
+            if self.committed_absolute_heading is not None:
+                _log(f"    Absolute heading target: {np.degrees(self.committed_absolute_heading):.1f}°")
             
             # Check if we can exit commitment early because obstacle has ACTUALLY passed
             # CRITICAL: Don't clear just because CPA improved - that might be temporary!
@@ -911,8 +908,13 @@ class CollisionAvoidance:
             if self.grid_world is not None:
                 gx, gy = int(round(cx)), int(round(cy))
                 
-                # Out of bounds is OK (open sea beyond map) - just skip land check
-                if 0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height:
+                # Leaving the world soon is a failure; far in the future it
+                # just ends the useful simulation horizon.
+                if not (0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height):
+                    if t < 40.0:
+                        return False, 0.0, t
+                    break
+                else:
                     # Check for land with safety buffer
                     for dx in range(-3, 4):
                         for dy in range(-3, 4):
@@ -1051,8 +1053,13 @@ class CollisionAvoidance:
             if self.grid_world is not None:
                 gx, gy = int(round(cx)), int(round(cy))
                 
-                # Out of bounds is OK (open sea beyond map) - just skip land check
-                if 0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height:
+                # Leaving the world soon is a failure; far in the future it
+                # just ends the useful simulation horizon.
+                if not (0 <= gx < self.grid_world.width and 0 <= gy < self.grid_world.height):
+                    if t < 40.0:
+                        return False, 0.0, trajectory
+                    break
+                else:
                     # Check for land (with small buffer)
                     for dx in range(-2, 3):
                         for dy in range(-2, 3):

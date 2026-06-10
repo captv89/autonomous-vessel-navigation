@@ -9,24 +9,16 @@ Each cell in the grid can be:
 
 import numpy as np
 from typing import Tuple, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
 try:
     from scipy import ndimage
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
-    print("Warning: scipy not available. Obstacle inflation will use fallback method.")
-try:
-    from scipy import ndimage
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
-    print("Warning: scipy not available. Obstacle inflation will use fallback method.")
-try:
-    from scipy import ndimage
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
-    print("Warning: scipy not available. Obstacle inflation will use fallback method.")
+    logger.warning("scipy not available; obstacle inflation uses fallback method.")
 
 
 class GridWorld:
@@ -61,8 +53,7 @@ class GridWorld:
         self._inflated_grid = None
         self._inflation_radius = 0
         
-        print(f"Created GridWorld: {width}x{height} cells, {cell_size}m per cell")
-        print(f"Total area: {width * cell_size}m x {height * cell_size}m")
+        logger.debug("Created GridWorld: %dx%d cells, %.1fm per cell", width, height, cell_size)
     
     def add_obstacle(self, x: int, y: int, width: int = 1, height: int = 1):
         
@@ -83,7 +74,7 @@ class GridWorld:
         
         # Mark cells as obstacles (value = 1)
         self.grid[y:y_end, x:x_end] = 1.0
-        print(f"Added obstacle at ({x}, {y}) with size {width}x{height}")
+        logger.debug("Added obstacle at (%d, %d) size %dx%d", x, y, width, height)
     
     def add_circular_obstacle(self, center_x: int, center_y: int, radius: int):
         
@@ -101,7 +92,7 @@ class GridWorld:
                 if distance <= radius:
                     self.grid[i, j] = 1.0
         
-        print(f"Added circular obstacle at ({center_x}, {center_y}) with radius {radius}")
+        logger.debug("Added circular obstacle at (%d, %d) r=%d", center_x, center_y, radius)
     
     def is_valid(self, x: int, y: int) -> bool:
         
@@ -152,7 +143,7 @@ class GridWorld:
         
         """Clear all obstacles from the grid."""
         self.grid = np.zeros((self.height, self.width), dtype=np.float32)
-        print("Grid cleared")
+        logger.debug("Grid cleared")
     
     def get_random_free_position(self) -> Tuple[int, int]:
         
@@ -231,8 +222,7 @@ class GridWorld:
         # Print statistics
         original_obstacles = np.sum(self.grid > 0.5)
         inflated_obstacles = np.sum(buffered > 0.5)
-        print(f"Inflated obstacles: {original_obstacles} → {inflated_obstacles} cells "
-              f"(+{inflated_obstacles - original_obstacles} safety buffer, radius={radius_cells})")
+        logger.debug("Inflated obstacles: %d -> %d cells", original_obstacles, inflated_obstacles)
         
         return self._inflated_grid
     
