@@ -53,6 +53,7 @@ class ClassicalAgent(Agent):
             "planner": "A* + string pulling",
             "follower": cfg.follower.type,
             "avoidance": cfg.avoidance.implementation,
+            "waypoints": [list(wp) for wp in self.waypoints],
         }
 
     # --------------------------------------------------------------- episode

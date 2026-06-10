@@ -105,6 +105,7 @@ class RewardConfig:
 
 @dataclass
 class RLConfig:
+    action_repeat: int = 5               # engine steps each decision is held
     n_lidar_rays: int = 16
     lidar_range: float = 40.0            # cells
     n_tracked_obstacles: int = 3         # nearest dynamic obstacles in observation

@@ -1,0 +1,73 @@
+simulation:
+  dt: 0.1
+  max_duration: 600.0
+  goal_tolerance: 5.0
+  collision_radius: 2.0
+  terminate_on_collision: true
+  terminate_on_grounding: true
+world:
+  width: 100
+  height: 100
+  cell_size: 10.0
+vessel:
+  cruise_speed: 2.5
+  max_speed: 4.0
+  nomoto_K: 0.4
+  nomoto_T: 4.0
+  max_rudder_deg: 35.0
+  rudder_rate_deg: 6.363636363636363
+control:
+  heading_kp: 1.0
+  heading_kd: 1.5
+  slowdown_start_deg: 20.0
+  slowdown_full_deg: 70.0
+  min_speed_factor: 0.4
+planner:
+  safety_margin: 6
+  max_segment_length: 15.0
+follower:
+  type: ilos
+  lookahead: 18.0
+  path_tolerance: 4.0
+  integral_gain: 0.5
+avoidance:
+  implementation: predictive
+  safe_distance: 10.0
+  warning_distance: 18.0
+  detector_safe_distance: 8.0
+  detector_warning_distance: 15.0
+  time_horizon: 60.0
+  avoidance_angle_deg: 30.0
+rl:
+  n_lidar_rays: 16
+  lidar_range: 40.0
+  n_tracked_obstacles: 3
+  heading_actions_deg:
+  - -30.0
+  - -15.0
+  - -5.0
+  - 0.0
+  - 5.0
+  - 15.0
+  - 30.0
+  reward:
+    goal_reached: 1000.0
+    collision: -1000.0
+    grounding: -1000.0
+    out_of_bounds: -500.0
+    time_penalty: -0.5
+    progress_scale: 10.0
+    near_miss: -5.0
+    heading_change_penalty: -0.2
+training:
+  total_timesteps: 300000
+  n_envs: 8
+  seed: 42
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 512
+  gamma: 0.995
+  ent_coef: 0.01
+  scenario: random
+  model_dir: models
+  log_dir: runs

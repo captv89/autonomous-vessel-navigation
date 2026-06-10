@@ -29,7 +29,12 @@ ENV/
 *.log
 data/
 output/
-models/
+logs/
+runs/
+reports/*/episodes/
+models/*
+!models/ppo_vessel.zip
+!models/ppo_vessel.config.yaml
 
 # OS
 .DS_Store
