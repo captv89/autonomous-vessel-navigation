@@ -45,4 +45,5 @@ def test_aggregate():
     agg = aggregate(eps)
     assert agg["success_rate"] == 0.5
     assert agg["collision_rate"] == 0.5
-    assert agg["mean_duration_s"] == 15.0
+    # duration is a route-quality metric: aggregated over successes only
+    assert agg["mean_duration_s"] == 10.0

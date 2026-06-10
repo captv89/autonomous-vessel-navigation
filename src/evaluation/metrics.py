@@ -101,11 +101,16 @@ def aggregate(per_episode: List[Dict[str, Any]]) -> Dict[str, Any]:
             sum(1 for m in per_episode if m.get("outcome") == "timeout")
             / len(per_episode), 3),
     }
+    # Route-quality metrics are only meaningful for episodes that finished
+    # the route; failed episodes end early and would skew them optimistic.
+    success_only = {"duration_s", "path_length", "path_efficiency"}
     for key in ("duration_s", "path_length", "path_efficiency",
                 "min_separation", "near_miss_steps", "mean_abs_rudder_deg",
                 "mean_abs_cross_track", "avoidance_step_fraction",
                 "starboard_turn_fraction"):
-        values = [m[key] for m in per_episode
+        pool = ([m for m in per_episode if m.get("success")]
+                if key in success_only else per_episode)
+        values = [m[key] for m in pool
                   if m.get(key) is not None and key in m]
         if values:
             out[f"mean_{key}"] = round(float(np.mean(values)), 3)

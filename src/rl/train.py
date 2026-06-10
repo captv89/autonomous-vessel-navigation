@@ -35,7 +35,8 @@ def make_env_fn(config: Config, scenario: str, rank: int, base_seed: int):
 def train(config: Config, total_timesteps: int, scenario: str,
           out_path: str, n_envs: int | None = None) -> str:
     from stable_baselines3 import PPO
-    from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+    from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,
+                                                  VecNormalize)
 
     tr = config.training
     n_envs = n_envs or tr.n_envs
@@ -46,6 +47,11 @@ def train(config: Config, total_timesteps: int, scenario: str,
 
     env_fns = [make_env_fn(config, scenario, i, tr.seed) for i in range(n_envs)]
     vec_env = (SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns))
+    # Return normalization stabilizes PPO's value/advantage scales; the
+    # policy's observation interface is untouched (norm_obs=False), so the
+    # saved model needs no normalization stats at inference time.
+    vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True,
+                           gamma=tr.gamma)
 
     try:
         import tensorboard  # noqa: F401

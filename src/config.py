@@ -93,14 +93,16 @@ class AvoidanceConfig:
 
 @dataclass
 class RewardConfig:
-    goal_reached: float = 1000.0
-    collision: float = -1000.0
-    grounding: float = -1000.0
-    out_of_bounds: float = -500.0
-    time_penalty: float = -0.5           # per step
-    progress_scale: float = 10.0         # x (reduction in goal distance, cells)
-    near_miss: float = -5.0              # per step inside detector safe_distance * 1.5
-    heading_change_penalty: float = -0.2 # x |action heading change| in rad, discourages zigzag
+    goal_reached: float = 100.0
+    collision: float = -100.0
+    grounding: float = -100.0
+    out_of_bounds: float = -50.0
+    time_penalty: float = -0.05          # per step
+    progress_scale: float = 1.0          # x (reduction in goal distance, cells)
+    near_miss: float = -0.5              # per step inside detector safe_distance * 1.5
+    heading_change_penalty: float = -0.02 # x |action heading change| in rad, discourages zigzag
+    land_proximity: float = -0.3         # per decision, scaled by closeness inside the range below
+    land_proximity_range: float = 8.0    # cells; shaping starts when land/wall is nearer than this
 
 
 @dataclass

@@ -68,10 +68,12 @@ class RLAgent(Agent):
 
     def decide(self, obs: Observation) -> Decision:
         if self._held is not None and obs.t < self._held_until:
-            held = Decision(self._held.desired_heading,
+            # Slim record while the helm order is held: the full observation
+            # and probability table are in the step that made the decision.
+            return Decision(self._held.desired_heading,
                             self._held.desired_speed,
-                            {**self._held.explanation, "held": True})
-            return held
+                            {"mode": "policy", "held": True,
+                             "action": self._held.explanation["action"]})
         decision = self._evaluate_policy(obs)
         self._held = decision
         self._held_until = obs.t + (self.config.rl.action_repeat

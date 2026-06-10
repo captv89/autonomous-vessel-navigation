@@ -80,6 +80,7 @@ src/
   vessel/               Nomoto vessel model, ILOS/pure-pursuit followers,
                         legacy avoider (kept; select via config)
 tests/                  pytest suite
+examples/               original phase-1 matplotlib demos (still runnable)
 ```
 
 ### Classical pipeline

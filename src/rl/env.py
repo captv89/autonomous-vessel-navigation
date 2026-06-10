@@ -82,6 +82,17 @@ class VesselNavEnv(gym.Env):
             if result.done:
                 break
         obs = result.obs
+        obs_vec = self.builder.build(obs)
+
+        # Shaped land/wall proximity penalty from the lidar the agent sees
+        # (terminal grounding alone is too sparse a signal to learn from).
+        rw = self.config.rl.reward
+        lidar = obs_vec[6:6 + self.config.rl.n_lidar_rays]
+        min_land = float(lidar.min()) * self.config.rl.lidar_range
+        if min_land < rw.land_proximity_range:
+            reward_parts["land_proximity"] = rw.land_proximity * (
+                1.0 - min_land / rw.land_proximity_range)
+
         reward = float(sum(reward_parts.values()))
 
         terminated = result.done and result.outcome != "timeout"
@@ -93,7 +104,7 @@ class VesselNavEnv(gym.Env):
         }
         if result.done:
             info["is_success"] = result.outcome == OUTCOME_GOAL
-        return (self.builder.build(obs), reward, terminated, truncated, info)
+        return (obs_vec, reward, terminated, truncated, info)
 
     # ---------------------------------------------------------------- reward
 
