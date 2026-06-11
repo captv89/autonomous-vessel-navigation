@@ -85,6 +85,9 @@ def make_agent_factory(spec: str, config: Config) -> Callable:
         from src.agents.rl_agent import RLAgent
         model_path = spec.split(":", 1)[1]
         return lambda: RLAgent(config, model_path)
+    if spec == "mpc":
+        from src.agents.mpc import MPCAgent
+        return lambda: MPCAgent(config)
     if spec.startswith("rl-shielded:"):
         from src.agents.shielded import ShieldedRLAgent
         model_path = spec.split(":", 1)[1]
@@ -95,7 +98,7 @@ def make_agent_factory(spec: str, config: Config) -> Callable:
         return lambda: cls(config)
     raise ValueError(
         f"Unknown agent spec '{spec}'. Use 'classical', 'classical-legacy', "
-        f"'rl:<model.zip>', 'rl-shielded:<model.zip>', or "
+        f"'mpc', 'rl:<model.zip>', 'rl-shielded:<model.zip>', or "
         f"'<module>:<AgentClass>'.")
 
 

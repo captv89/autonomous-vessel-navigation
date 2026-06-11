@@ -49,6 +49,14 @@ code { background:#22304a; padding:1px 6px; border-radius:4px;
 .note { background:var(--card); border-left:3px solid var(--bar);
         padding:10px 16px; border-radius:0 8px 8px 0; color:var(--dim);
         margin:1em 0; }
+.figs { display:flex; flex-wrap:wrap; gap:20px; margin-top:18px; }
+.figs figure { background:var(--card); border-radius:10px;
+               padding:14px 16px 8px; margin:0; flex:1 1 460px;
+               min-width:340px; }
+.figs figcaption { color:var(--dim); font-size:.85em; font-weight:600;
+                   text-transform:uppercase; letter-spacing:.05em;
+                   margin-bottom:8px; }
+.figs svg { width:100%; height:auto; }
 """
 
 
@@ -62,6 +70,110 @@ def _mean(ci, digits=2) -> str:
         return "–"
     return (f"{ci['mean']:.{digits}f} <span class='ci'>"
             f"[{ci['low']:.{digits}f}, {ci['high']:.{digits}f}]</span>")
+
+
+AGENT_COLORS = ["#5dd39e", "#5da9e8", "#e8c45a", "#e8865a", "#b48ce8",
+                "#8ce8dd"]
+OUTCOME_COLORS = {"goal": "#3fa874", "collision": "#d9534f",
+                  "grounding": "#e8965a", "out_of_bounds": "#9b6fd4",
+                  "timeout": "#7d8694"}
+
+
+def _svg_outcome_bars(agents_ranked, cond: str) -> str:
+    """Stacked horizontal outcome bars, one row per agent."""
+    bar_w, bar_h, gap, label_w = 560, 26, 14, 150
+    rows = []
+    outcomes = ["goal", "collision", "grounding", "out_of_bounds", "timeout"]
+    for i, agent in enumerate(agents_ranked):
+        episodes = agent["conditions"][cond]["episodes"]
+        n = max(len(episodes), 1)
+        counts = {o: sum(1 for e in episodes if e["outcome"] == o)
+                  for o in outcomes}
+        y = i * (bar_h + gap)
+        x = label_w
+        segs = [f'<text x="{label_w - 10}" y="{y + bar_h - 8}" '
+                f'text-anchor="end" fill="#e8ebf0" font-size="13" '
+                f'font-weight="600">{agent["name"]}</text>']
+        for o in outcomes:
+            frac = counts[o] / n
+            w = frac * bar_w
+            if w <= 0:
+                continue
+            segs.append(
+                f'<rect x="{x:.1f}" y="{y}" width="{w:.1f}" '
+                f'height="{bar_h}" rx="3" fill="{OUTCOME_COLORS[o]}">'
+                f'<title>{o}: {counts[o]}/{n} ({frac:.0%})</title></rect>')
+            if frac >= 0.07:
+                segs.append(
+                    f'<text x="{x + w / 2:.1f}" y="{y + bar_h - 8}" '
+                    f'text-anchor="middle" fill="#0e1420" font-size="11" '
+                    f'font-weight="700">{frac:.0%}</text>')
+            x += w
+        rows.append("".join(segs))
+    height = len(agents_ranked) * (bar_h + gap)
+    legend = "".join(
+        f'<rect x="{label_w + j * 118}" y="{height + 6}" width="12" '
+        f'height="12" rx="2" fill="{OUTCOME_COLORS[o]}"/>'
+        f'<text x="{label_w + j * 118 + 17}" y="{height + 17}" '
+        f'fill="#9aa3b2" font-size="12">{o.replace("_", " ")}</text>'
+        for j, o in enumerate(outcomes))
+    return (f'<svg viewBox="0 0 {label_w + bar_w + 10} {height + 30}" '
+            f'role="img" aria-label="Episode outcomes by agent">'
+            f'{"".join(rows)}{legend}</svg>')
+
+
+def _svg_safety_speed(agents_ranked, cond: str) -> str:
+    """Scatter: mean time to goal (x, lower=better) vs success rate (y)."""
+    width, height, pad_l, pad_b, pad_t = 560, 300, 60, 44, 16
+    pts = []
+    for i, agent in enumerate(agents_ranked):
+        c = agent["conditions"][cond]
+        if not c.get("duration_s"):
+            continue
+        pts.append((agent["name"], c["duration_s"]["mean"],
+                    c["success"]["rate"], AGENT_COLORS[i % len(AGENT_COLORS)]))
+    if not pts:
+        return ""
+    xs = [p[1] for p in pts]
+    x_min, x_max = min(xs) * 0.85, max(xs) * 1.12
+    def X(v): return pad_l + (v - x_min) / (x_max - x_min) * (width - pad_l - 12)
+    def Y(v): return pad_t + (1.0 - v) * (height - pad_t - pad_b)
+    grid = []
+    for frac in (0.25, 0.5, 0.75, 1.0):
+        gy = Y(frac)
+        grid.append(f'<line x1="{pad_l}" y1="{gy:.0f}" x2="{width - 10}" '
+                    f'y2="{gy:.0f}" stroke="#243149" stroke-width="1"/>'
+                    f'<text x="{pad_l - 8}" y="{gy + 4:.0f}" '
+                    f'text-anchor="end" fill="#9aa3b2" font-size="11">'
+                    f'{frac:.0%}</text>')
+    dots = []
+    for name, x, y, color in pts:
+        cx, cy = X(x), Y(y)
+        dots.append(
+            f'<circle cx="{cx:.0f}" cy="{cy:.0f}" r="8" fill="{color}" '
+            f'fill-opacity="0.9"><title>{name}: {x:.1f}s, {y:.0%} success'
+            f'</title></circle>'
+            f'<text x="{cx:.0f}" y="{cy - 13:.0f}" text-anchor="middle" '
+            f'fill="#e8ebf0" font-size="12" font-weight="600">{name}</text>')
+    axis = (f'<text x="{(pad_l + width) / 2:.0f}" y="{height - 6}" '
+            f'text-anchor="middle" fill="#9aa3b2" font-size="12">'
+            f'mean time to goal, s (successful episodes) — left and high is '
+            f'better</text>'
+            f'<text x="14" y="{height / 2:.0f}" fill="#9aa3b2" '
+            f'font-size="12" transform="rotate(-90 14 {height / 2:.0f})" '
+            f'text-anchor="middle">success rate</text>')
+    return (f'<svg viewBox="0 0 {width} {height}" role="img" '
+            f'aria-label="Success rate vs time to goal">'
+            f'{"".join(grid)}{"".join(dots)}{axis}</svg>')
+
+
+def _compliance_cell(score: float, n: int) -> str:
+    # red (0) -> amber (0.5) -> green (1)
+    r = int(217 - score * (217 - 63))
+    g = int(83 + score * (168 - 83))
+    b = int(79 + score * 37)
+    return (f'<td style="background:rgba({r},{g},{b},.28)">'
+            f'{score:.2f} <span class="ci">(n={n})</span></td>')
 
 
 def render_html(results: Dict[str, Any]) -> str:
@@ -124,8 +236,7 @@ with identical config hashes.</div>"""]
             by_enc = agent["conditions"][cond]["colregs"].get(
                 "by_encounter", {})
             cells = "".join(
-                f"<td>{by_enc[e]['mean_score']:.2f} "
-                f"<span class='ci'>(n={by_enc[e]['n']})</span></td>"
+                _compliance_cell(by_enc[e]["mean_score"], by_enc[e]["n"])
                 if e in by_enc else "<td>–</td>"
                 for e in encounter_types)
             enc_rows.append(f"<tr><td class='agent'>{agent['name']}</td>"
@@ -136,6 +247,12 @@ with identical config hashes.</div>"""]
 <th>Collision</th><th>Grounding</th><th>COLREGs</th>
 <th>Time to goal (s)</th><th>Min separation</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
+<div class="figs">
+<figure><figcaption>Episode outcomes</figcaption>
+{_svg_outcome_bars(ranked, cond)}</figure>
+<figure><figcaption>Safety vs speed trade-off</figcaption>
+{_svg_safety_speed(ranked, cond)}</figure>
+</div>
 <h3 style="color:var(--dim)">COLREGs compliance by encounter type</h3>
 <table><thead><tr><th>Agent</th>
 {''.join(f'<th>{e}</th>' for e in encounter_types)}</tr></thead>

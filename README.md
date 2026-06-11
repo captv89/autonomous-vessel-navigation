@@ -1,15 +1,32 @@
-# Autonomous Vessel Navigation Simulator + VesselNav-Bench
+<div align="center">
 
-A 2D ship navigation simulator and a **frozen, seeded benchmark
-(VesselNav-Bench)** for comparing navigation policies — classical
-(physics/rule-based), reinforcement learning, or your own — under identical
-physics, scenarios, and ground-truth scoring, with complete visibility into
-every decision any approach makes.
+# ⚓ VesselNav-Bench
+
+### A transparent benchmark for autonomous ship navigation
+
+**Classical pipelines · Model Predictive Control · Reinforcement Learning —
+one physics engine, one exam, one leaderboard.**
+
+[![CI](https://github.com/captv89/autonomous-vessel-navigation/actions/workflows/ci.yml/badge.svg)](https://github.com/captv89/autonomous-vessel-navigation/actions/workflows/ci.yml)
+[![Leaderboard](https://img.shields.io/badge/leaderboard-live-2ea44f)](https://captv89.github.io/autonomous-vessel-navigation/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
+
+</div>
+
+A 2D ship navigation simulator and a **frozen, seeded benchmark** for
+comparing navigation policies — rule-based, optimization-based (MPC),
+learned (RL), shielded hybrids, or **your own** — under identical physics,
+identical scenarios, and identical ground-truth scoring, with complete
+visibility into every decision any approach makes.
+
+**▶ Live leaderboard: https://captv89.github.io/autonomous-vessel-navigation/**
 
 ```bash
 # Score any agent on the benchmark and get a ranked leaderboard
 uv run python main.py benchmark --suite benchmarks/v1.yaml \
-    --agent classical --agent rl:models/ppo_vessel \
+    --agent classical --agent mpc \
+    --agent rl:models/ppo_vessel --agent rl-shielded:models/ppo_vessel \
     --agent your_package.your_module:YourAgent
 ```
 
@@ -91,6 +108,38 @@ episode with pause/step/speed controls and a decision-inspector panel.
 | `overtaking` | Rule 13, slow vessel ahead |
 | `coastal` | Landmasses + mixed traffic |
 | `random` | Seeded generator (islands + traffic) used for training/eval suites |
+
+## The five built-in baselines
+
+| Spec | Family | One-line description |
+|---|---|---|
+| `classical` | Rule-based | A* route + ILOS guidance + predictive COLREGs avoidance override |
+| `classical-legacy` | Rule-based (ablation) | Same pipeline with the original avoidance module |
+| `mpc` | Optimization | A* route + sampling MPC: one cost function unifies tracking, traffic separation, effort, and a COLREGs prior |
+| `rl:<model>` | Learning | PPO over a labeled 35-feature observation, helm-order actions |
+| `rl-shielded:<model>` | Hybrid | The PPO policy inside a predictive runtime safety filter; every intervention logged |
+
+```mermaid
+flowchart LR
+    subgraph Agents
+        C[classical<br/>A* + ILOS + avoider]
+        M[mpc<br/>A* + sampling MPC]
+        R[rl_ppo<br/>PPO policy]
+        S[rl_ppo_shielded<br/>PPO + safety filter]
+    end
+    E[SimulationEngine<br/>3-DOF dynamics · autopilot<br/>traffic · current · gusts]
+    L[(JSONL episode logs<br/>per-step decisions)]
+    B[VesselNav-Bench<br/>seeded suite + CIs<br/>COLREGs scoring]
+    V[Viewer<br/>live + replay]
+    H[HTML leaderboard<br/>GitHub Pages]
+
+    Agents -- "Decision (helm order + explanation)" --> E
+    E -- "Observation (ground truth)" --> Agents
+    E --> L
+    L --> B
+    L --> V
+    B --> H
+```
 
 ## Architecture
 

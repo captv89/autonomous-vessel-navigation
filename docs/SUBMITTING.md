@@ -58,10 +58,11 @@ uv run python main.py benchmark --suite benchmarks/v1.yaml \
     --out reports/my-submission
 ```
 
-Built-in baseline specs: `classical`, `classical-legacy`,
-`rl:<model.zip>`, and `rl-shielded:<model.zip>` (the RL policy wrapped in
-the predictive runtime safety filter; every intervention is logged in the
-decision record and surfaced as `shield_intervention_fraction`).
+Built-in baseline specs: `classical`, `classical-legacy`, `mpc`
+(A* route + sampling MPC with a unified cost), `rl:<model.zip>`, and
+`rl-shielded:<model.zip>` (the RL policy wrapped in the predictive runtime
+safety filter; every intervention is logged in the decision record and
+surfaced as `shield_intervention_fraction`).
 
 This produces `leaderboard.md` (ranked table with 95% confidence
 intervals), `results.json` (every number, recomputable), and
