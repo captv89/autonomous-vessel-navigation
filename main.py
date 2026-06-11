@@ -89,6 +89,15 @@ def cmd_evaluate(args) -> None:
     print(f"report: {report}")
 
 
+def cmd_benchmark(args) -> None:
+    from src.evaluation.benchmark import load_suite, run_benchmark
+    config = Config.load(args.config)
+    suite = load_suite(args.suite)
+    report = run_benchmark(config, suite, args.agent, out_dir=args.out,
+                           keep_logs=not args.no_logs)
+    print(f"leaderboard: {report}")
+
+
 def cmd_replay(args) -> None:
     from src.visualization.viewer import replay
     replay(args.log)
@@ -131,6 +140,19 @@ def main() -> None:
     p.add_argument("--config", default=None)
     p.add_argument("--out", default="reports/latest")
 
+    p = sub.add_parser("benchmark",
+                       help="run the frozen benchmark suite (leaderboard)")
+    p.add_argument("--suite", default="benchmarks/v1.yaml")
+    p.add_argument("--agent", action="append", required=True,
+                   help="agent spec: classical | classical-legacy | "
+                        "rl:<model.zip> | <module>:<AgentClass> "
+                        "(repeatable)")
+    p.add_argument("--config", default=None)
+    p.add_argument("--out", default="reports/benchmark")
+    p.add_argument("--no-logs", action="store_true",
+                   help="skip per-episode logs (faster, disables COLREGs "
+                        "scoring and replays)")
+
     p = sub.add_parser("replay", help="replay a recorded episode")
     p.add_argument("log", help="JSONL episode log")
 
@@ -141,7 +163,7 @@ def main() -> None:
 
     {"scenarios": cmd_scenarios, "simulate": cmd_simulate,
      "train": cmd_train, "evaluate": cmd_evaluate,
-     "replay": cmd_replay}[args.command](args)
+     "benchmark": cmd_benchmark, "replay": cmd_replay}[args.command](args)
 
 
 if __name__ == "__main__":

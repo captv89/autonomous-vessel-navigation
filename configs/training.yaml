@@ -1,0 +1,6 @@
+# Training configuration: randomized environmental disturbances per episode
+# (scenario-seeded) for robustness; everything else uses defaults.
+environment:
+  randomize: true
+  max_random_current: 0.3
+  wind_gust_accel: 0.03

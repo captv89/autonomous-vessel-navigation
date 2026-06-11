@@ -1,14 +1,31 @@
-# Autonomous Vessel Navigation Simulator
+# Autonomous Vessel Navigation Simulator + VesselNav-Bench
 
-A 2D ship navigation simulator built to compare **classical (physics/rule-based)**
-and **reinforcement-learning** approaches to unmanned vessel navigation — with
-complete visibility into every decision either approach makes.
+A 2D ship navigation simulator and a **frozen, seeded benchmark
+(VesselNav-Bench)** for comparing navigation policies — classical
+(physics/rule-based), reinforcement learning, or your own — under identical
+physics, scenarios, and ground-truth scoring, with complete visibility into
+every decision any approach makes.
+
+```bash
+# Score any agent on the benchmark and get a ranked leaderboard
+uv run python main.py benchmark --suite benchmarks/v1.yaml \
+    --agent classical --agent rl:models/ppo_vessel \
+    --agent your_package.your_module:YourAgent
+```
+
+Submissions implement one small contract (`reset`/`decide`) — see
+[docs/SUBMITTING.md](docs/SUBMITTING.md). The leaderboard reports success /
+collision / grounding rates with Wilson 95% CIs, COLREGs-compliance scores
+per encounter type, and efficiency metrics with bootstrap CIs; every number
+is backed by a replayable episode log.
 
 ## How the comparison stays fair and transparent
 
-- **One physics engine.** Both agents drive the same headless
-  `SimulationEngine` (Nomoto yaw dynamics, IMO rudder-rate limits, PD
-  autopilot, dynamic traffic, grid-based land). The RL gymnasium env is a thin
+- **One physics engine.** All agents drive the same headless
+  `SimulationEngine`: a 3-DOF surge-sway-yaw maneuvering model (Nomoto yaw
+  channel, sideslip, turn speed loss, first-order surge), IMO rudder-rate
+  limits, course-over-ground PD autopilot, water current + seeded wind
+  gusts, dynamic traffic, grid-based land. The RL gymnasium env is a thin
   wrapper over it — there is no second physics implementation to drift.
 - **One decision contract.** Every step, an agent returns a `Decision`:
   a helm order *plus a structured explanation*.
@@ -61,8 +78,11 @@ episode with pause/step/speed controls and a decision-inspector panel.
 ## Architecture
 
 ```
-main.py                 CLI: scenarios / simulate / train / evaluate / replay
+main.py                 CLI: scenarios / simulate / train / evaluate /
+                        benchmark / replay
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
+benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
+docs/SUBMITTING.md      how to score your own model on the benchmark
 src/
   config.py             typed config dataclasses
   sim/                  engine.py (headless physics loop), scenarios.py,
@@ -73,7 +93,9 @@ src/
                         rl_agent.py (SB3 PPO policy wrapper)
   rl/                   observation.py (labeled feature vector, shared
                         train/eval), env.py (gymnasium), train.py (PPO)
-  evaluation/           runner.py (seeded suites), metrics.py, report.py
+  evaluation/           runner.py (seeded suites), metrics.py, report.py,
+                        benchmark.py (leaderboard), colregs.py (rule
+                        compliance scoring), stats.py (CIs)
   visualization/        viewer.py (pygame live + replay)
   environment/          grid world, traffic vessels, CPA/TCPA detection
   pathfinding/          A* + string pulling
@@ -98,6 +120,21 @@ Discrete course-change actions held for `rl.action_repeat` engine steps —
 the same helm-order abstraction the classical agent uses. Reward is decomposed
 (progress / time / near-miss / terminal events) and the per-component
 breakdown is logged every step during training and evaluation.
+
+## Vessel dynamics
+
+`vessel.model` selects the dynamics (both share the factory used by the
+engine *and* by the classical agent's prediction rollouts):
+
+- `fossen3` (default): 3-DOF linear maneuvering model — Nomoto yaw channel
+  (K, T keep their meaning), first-order sideslip toward `-gain*u*r`,
+  turn-induced speed loss, first-order surge response, water current in the
+  kinematics, seeded wind-gust forces.
+- `nomoto`: the original first-order yaw model, kept for ablations.
+
+Environmental disturbances live in the `environment` config section and can
+be fixed or scenario-seeded (`randomize: true`), so every agent experiences
+the identical realization per episode seed.
 
 ## Units & scale
 

@@ -1,0 +1,35 @@
+# VesselNav-Bench v1
+#
+# Frozen benchmark suite: do NOT edit released versions in place — publish a
+# v2 instead. The runner records the SHA-256 of the resolved physics config
+# in every results file so reported numbers are tied to the exact exam.
+name: vesselnav-bench
+version: 1
+description: >
+  Seeded navigation suite for comparing autonomous-vessel navigation
+  policies under identical physics, scenarios, and scoring: canonical
+  COLREGs encounters, coastal planning, and randomized worlds, in calm and
+  disturbed (current + wind gust) conditions.
+
+episodes_per_scenario: 20
+base_seed: 1000
+
+scenarios:
+  - open_water
+  - head_on
+  - crossing_starboard
+  - crossing_port
+  - overtaking
+  - coastal
+  - random
+
+# Each condition is a (partial) config override applied on top of the
+# benchmark's base config. Disturbances are scenario-seeded, so every agent
+# experiences the identical current/gust realization per episode.
+conditions:
+  calm: {}
+  disturbed:
+    environment:
+      randomize: true
+      max_random_current: 0.3
+      wind_gust_accel: 0.03

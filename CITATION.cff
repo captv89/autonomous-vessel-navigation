@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use VesselNav-Bench or this simulator in your research, please cite it as below."
+title: "VesselNav-Bench: a transparent benchmark for autonomous vessel navigation"
+type: software
+authors:
+  # TODO: replace with your name and (optionally) ORCID before release
+  - name: "captv89"
+repository-code: "https://github.com/captv89/autonomous-vessel-navigation"
+license: MIT
+keywords:
+  - autonomous surface vessels
+  - COLREGs
+  - collision avoidance
+  - reinforcement learning
+  - benchmark
+abstract: >
+  A 2D autonomous ship navigation simulator and frozen, seeded benchmark
+  (VesselNav-Bench) for comparing classical and learning-based navigation
+  policies under identical physics, scenarios, and ground-truth scoring,
+  with per-decision transparency for both paradigms.

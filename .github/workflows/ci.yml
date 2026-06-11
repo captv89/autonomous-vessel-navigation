@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Run tests
+        run: uv run pytest -q
+      - name: Benchmark smoke (classical, reduced suite)
+        run: |
+          uv run python - <<'EOF'
+          from src.config import Config
+          from src.evaluation.benchmark import run_benchmark
+          suite = {"name": "ci-smoke", "version": 0, "description": "ci",
+                   "scenarios": ["head_on", "crossing_starboard"],
+                   "episodes_per_scenario": 2, "base_seed": 1,
+                   "conditions": {"calm": {}}}
+          run_benchmark(Config(), suite, ["classical"], "/tmp/bench")
+          print(open("/tmp/bench/leaderboard.md").read())
+          EOF
