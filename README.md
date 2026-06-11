@@ -43,15 +43,22 @@ Current baselines on
 | Agent | Score | Success | Collision | Grounding | COLREGs | Time to goal |
 |---|---|---|---|---|---|---|
 | classical (A* + ILOS + predictive avoidance) | 97.8 | 100% | 0% | 0% | 0.94 | 56.9 s |
+| mpc (A* + sampling MPC, unified cost) | 96.5 | 99.3% | 0% | 0% | 0.93 | **49.2 s** |
 | **rl_ppo_shielded** (PPO + runtime safety filter) | 85.6 | 85.7% | **0%** | **0%** | 0.79 | 45.7 s |
 | classical-legacy (original avoider, ablation) | 85.1 | 84.3% | 0% | 15.7% | 0.80 | 49.2 s |
 | rl_ppo (PPO, 1M steps, unshielded) | 79.4 | 80.0% | 0.7% | 18.6% | 0.67 | 41.2 s |
 
-The shield ablation is the benchmark's headline experiment: wrapping the
-learned policy in a classical predictive safety filter eliminates all of
-its collisions and groundings while keeping most of its speed advantage —
-and every shield intervention is logged, so the division of labor between
-policy and shield is measurable per episode.
+Two headline experiments fall out of the table:
+
+- **Safety shielding**: wrapping the learned policy in a classical
+  predictive filter eliminates *all* of its collisions and groundings
+  (0.7% / 18.6% → 0 / 0) while keeping most of its speed advantage — and
+  every shield intervention is logged, so the division of labor between
+  policy and shield is measurable per episode.
+- **Three families, one exam**: rule-based, optimization-based, and
+  learned navigation are scored on identical seeded episodes with
+  identical ground-truth metrics — the comparison existing papers make
+  across incompatible setups.
 
 ## How the comparison stays fair and transparent
 
