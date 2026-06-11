@@ -154,7 +154,16 @@ class PredictiveAvoider:
         track_result = track_rollout()
 
         if not self.active:
-            if track_result.safe:
+            # Engagement: the classical agent's planner already guarantees
+            # the route is clear of land, so it engages on traffic
+            # separation only; in shield mode (engage_without_traffic) the
+            # proposed track is arbitrary and static hazards count too.
+            if self.engage_without_traffic:
+                track_ok = track_result.safe
+            else:
+                track_ok = (track_result.min_separation
+                            >= self.safe_distance)
+            if track_ok:
                 return AvoidanceDecision(
                     active=False,
                     reason=f"route safe (predicted miss "

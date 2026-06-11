@@ -23,11 +23,18 @@ Current baselines on
 [VesselNav-Bench v1](reports/benchmark-v1/leaderboard.md)
 (280 seeded episodes per agent per condition, calm condition shown):
 
-| Agent | Score | Success | Collision | COLREGs | Time to goal |
-|---|---|---|---|---|---|
-| classical (A* + ILOS + predictive avoidance) | 97.4 | 100% | 0% | 0.94 | 56.4 s |
-| classical-legacy (original avoider, ablation) | 85.1 | 84.3% | 0% | 0.80 | 49.2 s |
-| rl_ppo (PPO, 1M steps, mixed curriculum) | 79.4 | 80.0% | 0.7% | 0.67 | 41.2 s |
+| Agent | Score | Success | Collision | Grounding | COLREGs | Time to goal |
+|---|---|---|---|---|---|---|
+| classical (A* + ILOS + predictive avoidance) | 97.8 | 100% | 0% | 0% | 0.94 | 56.9 s |
+| **rl_ppo_shielded** (PPO + runtime safety filter) | 85.6 | 85.7% | **0%** | **0%** | 0.79 | 45.7 s |
+| classical-legacy (original avoider, ablation) | 85.1 | 84.3% | 0% | 15.7% | 0.80 | 49.2 s |
+| rl_ppo (PPO, 1M steps, unshielded) | 79.4 | 80.0% | 0.7% | 18.6% | 0.67 | 41.2 s |
+
+The shield ablation is the benchmark's headline experiment: wrapping the
+learned policy in a classical predictive safety filter eliminates all of
+its collisions and groundings while keeping most of its speed advantage —
+and every shield intervention is logged, so the division of labor between
+policy and shield is measurable per episode.
 
 ## How the comparison stays fair and transparent
 
