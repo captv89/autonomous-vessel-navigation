@@ -23,7 +23,7 @@ import numpy as np
 from src.config import Config
 from src.environment.grid_world import GridWorld
 from src.environment.dynamic_obstacles import DynamicObstacleManager
-from src.vessel.vessel_model import NomotoVessel
+from src.vessel.dynamics import make_vessel
 from src.sim.scenarios import Scenario
 
 logger = logging.getLogger(__name__)
@@ -39,10 +39,11 @@ OUTCOME_TIMEOUT = "timeout"
 class Observation:
     """Ground-truth snapshot handed to agents each step."""
     t: float
-    vessel: Dict[str, float]          # x, y, heading, speed, turn_rate, rudder_angle, rudder_command
+    vessel: Dict[str, float]          # x, y, heading, speed, sway, turn_rate, rudder_angle, rudder_command
     obstacles: List[Dict[str, float]] # id, x, y, heading, speed
     goal: Tuple[float, float]
     world: GridWorld                  # reference (read-only by convention)
+    current: Tuple[float, float] = (0.0, 0.0)  # water current (drift estimate)
 
     @property
     def position(self) -> Tuple[float, float]:
@@ -81,14 +82,29 @@ class SimulationEngine:
         self.t = 0.0
         self.steps = 0
         self.outcome: Optional[str] = None
-        self.vessel = NomotoVessel(
-            x=float(sc.start[0]), y=float(sc.start[1]),
+
+        # Environmental disturbances: fixed from config, or drawn from the
+        # scenario seed when randomize is on (deterministic per scenario).
+        rng = np.random.default_rng(sc.seed if sc.seed is not None else 0)
+        env = cfg.environment
+        if env.randomize:
+            speed = rng.uniform(0.0, env.max_random_current)
+            direction = rng.uniform(-np.pi, np.pi)
+            self.current = (float(speed * np.cos(direction)),
+                            float(speed * np.sin(direction)))
+        else:
+            cur = env.current_vector()
+            self.current = (float(cur[0]), float(cur[1]))
+
+        # Depart at half cruise speed: vessels align with their route before
+        # coming up to speed, which keeps the initial turn transient from
+        # building large cross-track error (same condition for all agents).
+        self.vessel = make_vessel(
+            cfg, x=float(sc.start[0]), y=float(sc.start[1]),
             heading=np.radians(sc.start_heading_deg),
-            speed=cfg.vessel.cruise_speed,
-            max_speed=cfg.vessel.max_speed,
-            K=cfg.vessel.nomoto_K, T=cfg.vessel.nomoto_T,
-            max_rudder=cfg.vessel.max_rudder,
-            rudder_rate=cfg.vessel.rudder_rate)
+            speed=0.5 * cfg.vessel.cruise_speed,
+            current=self.current, wind_gust_accel=env.wind_gust_accel,
+            rng=rng)
         self.traffic: DynamicObstacleManager = sc.make_traffic()
         self.collision_count = 0
         self.grounding_count = 0
@@ -107,6 +123,7 @@ class SimulationEngine:
                 "x": x, "y": y,
                 "heading": v.get_heading(),
                 "speed": v.get_speed(),
+                "sway": getattr(v, "get_sway", lambda: 0.0)(),
                 "turn_rate": v.get_turn_rate(),
                 "rudder_angle": v.get_rudder_angle(),
                 "rudder_command": v.get_rudder_command(),
@@ -118,7 +135,8 @@ class SimulationEngine:
                 "speed": mv.obstacle.speed,
             } for mv in self.traffic.obstacles],
             goal=self.goal,
-            world=self.world)
+            world=self.world,
+            current=self.current)
 
     # ------------------------------------------------------------------ step
 
@@ -127,8 +145,20 @@ class SimulationEngine:
         cfg = self.config
         dt = cfg.simulation.dt
 
-        # PD autopilot: heading error + yaw damping -> rudder command
-        heading_error = desired_heading - self.vessel.get_heading()
+        # PD autopilot steering course-over-ground: the commanded heading
+        # from agents is really a desired track direction, so steering the
+        # velocity vector compensates crab angle from sideslip and current.
+        # Falls back to heading when nearly stationary (course undefined).
+        psi = self.vessel.get_heading()
+        u = self.vessel.get_speed()
+        sway = getattr(self.vessel, "get_sway", lambda: 0.0)()
+        vx = u * np.cos(psi) - sway * np.sin(psi) + self.current[0]
+        vy = u * np.sin(psi) + sway * np.cos(psi) + self.current[1]
+        if np.hypot(vx, vy) > 0.3:
+            reference = np.arctan2(vy, vx)
+        else:
+            reference = psi
+        heading_error = desired_heading - reference
         heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
         rudder_command = (cfg.control.heading_kp * heading_error
                           - cfg.control.heading_kd * self.vessel.get_turn_rate())
@@ -136,6 +166,11 @@ class SimulationEngine:
         self.vessel.update(dt, rudder_command=rudder_command,
                            desired_speed=desired_speed)
         self.traffic.update_all(dt)
+        # Traffic drifts with the same water current as the own ship.
+        if self.current != (0.0, 0.0):
+            for mv in self.traffic.obstacles:
+                mv.obstacle.x += self.current[0] * dt
+                mv.obstacle.y += self.current[1] * dt
         self.t += dt
         self.steps += 1
 

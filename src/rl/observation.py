@@ -10,11 +10,12 @@ Layout (all values normalized to roughly [-1, 1]):
     0  goal distance (clipped by world diagonal)
     1  goal bearing relative to heading (sin)
     2  goal bearing relative to heading (cos)
-    3  speed / max_speed
-    4  turn rate / max plausible turn rate
-    5  rudder angle / max rudder
-    6..6+R-1                lidar: land/bounds distance per ray (1 = clear)
-    6+R..6+R+4*K-1          per tracked vessel (K nearest):
+    3  speed (surge) / max_speed
+    4  sway velocity / max_speed
+    5  turn rate / max plausible turn rate
+    6  rudder angle / max rudder
+    7..7+R-1                lidar: land/bounds distance per ray (1 = clear)
+    7+R..7+R+4*K-1          per tracked vessel (K nearest):
                               distance, relative bearing (sin, cos),
                               closing speed (positive = approaching)
 """
@@ -35,11 +36,12 @@ class ObservationBuilder:
         self.n_rays = config.rl.n_lidar_rays
         self.lidar_range = config.rl.lidar_range
         self.n_tracked = config.rl.n_tracked_obstacles
-        self.size = 6 + self.n_rays + 4 * self.n_tracked
+        self.size = 7 + self.n_rays + 4 * self.n_tracked
+        self.n_scalar = 7        # features before the lidar block
 
     def labels(self) -> List[str]:
         out = ["goal_distance", "goal_bearing_sin", "goal_bearing_cos",
-               "speed", "turn_rate", "rudder_angle"]
+               "speed", "sway", "turn_rate", "rudder_angle"]
         out += [f"lidar_{i}" for i in range(self.n_rays)]
         for k in range(self.n_tracked):
             out += [f"vessel{k}_distance", f"vessel{k}_bearing_sin",
@@ -62,6 +64,7 @@ class ObservationBuilder:
             np.sin(goal_bearing),
             np.cos(goal_bearing),
             v["speed"] / cfg.vessel.max_speed,
+            np.clip(v.get("sway", 0.0) / cfg.vessel.max_speed, -1.0, 1.0),
             np.clip(v["turn_rate"] / max_turn, -1.0, 1.0),
             v["rudder_angle"] / cfg.vessel.max_rudder,
         ]

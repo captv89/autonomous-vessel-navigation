@@ -147,6 +147,7 @@ class ClassicalAgent(Agent):
 
         # 3. Collision avoidance may override the follower heading
         if isinstance(self.avoider, PredictiveAvoider):
+            self.avoider.current = obs.current
             desired_heading, mode, avoidance_info = self._avoid_predictive(
                 obs, desired_heading)
         else:

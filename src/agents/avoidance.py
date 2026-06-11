@@ -25,7 +25,7 @@ import numpy as np
 
 from src.config import Config
 from src.environment.grid_world import GridWorld
-from src.vessel.vessel_model import NomotoVessel
+from src.vessel.dynamics import make_vessel
 
 # Steering callback: position -> desired heading (None = keep last)
 SteerFn = Callable[[Tuple[float, float]], Optional[float]]
@@ -80,6 +80,7 @@ class PredictiveAvoider:
         self.rollout_dt = 0.5
         self.replan_interval = 1.0                  # s between re-evaluations
         self.land_buffer = 2.0                      # cells of clearance to land
+        self.current = (0.0, 0.0)                   # drift estimate for rollouts
         self.reset()
 
     def reset(self) -> None:
@@ -233,12 +234,14 @@ class PredictiveAvoider:
         dt = self.rollout_dt
         n = int(self.horizon / dt)
 
-        model = NomotoVessel(
-            x=vs["x"], y=vs["y"], heading=vs["heading"], speed=vs["speed"],
-            max_speed=cfg.vessel.max_speed, K=cfg.vessel.nomoto_K,
-            T=cfg.vessel.nomoto_T, max_rudder=cfg.vessel.max_rudder,
-            rudder_rate=cfg.vessel.rudder_rate)
-        model.state.turn_rate = vs.get("turn_rate", 0.0)
+        model = make_vessel(cfg, x=vs["x"], y=vs["y"],
+                            heading=vs["heading"], speed=vs["speed"],
+                            current=self.current)
+        if hasattr(model, "state"):          # nomoto
+            model.state.turn_rate = vs.get("turn_rate", 0.0)
+        else:                                # fossen3
+            model.r = vs.get("turn_rate", 0.0)
+            model.v = vs.get("sway", 0.0)
         model.rudder_angle = vs.get("rudder_angle", 0.0)
 
         target = target_heading

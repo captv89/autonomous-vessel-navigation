@@ -37,12 +37,18 @@ class WorldConfig:
 
 @dataclass
 class VesselConfig:
+    model: str = "fossen3"               # "fossen3" (3-DOF) or "nomoto"
     cruise_speed: float = 2.5            # cells/s (world is 100 cells across)
     max_speed: float = 4.0
-    nomoto_K: float = 0.4                # Nomoto gain (1/s per rad of rudder)
-    nomoto_T: float = 4.0                # Nomoto time constant (s)
+    nomoto_K: float = 0.4                # yaw gain (1/s per rad of rudder)
+    nomoto_T: float = 4.0                # yaw time constant (s)
     max_rudder_deg: float = 35.0         # IMO standard
     rudder_rate_deg: float = 70.0 / 11.0 # IMO: 70 deg in 11 s
+    # fossen3-only parameters
+    sway_time_constant: float = 2.0      # s, sideslip build-up
+    sideslip_gain: float = 1.2           # v_steady = -gain * u * r
+    turn_speed_loss: float = 0.4         # u_dot -= loss * |r| * u
+    surge_time_constant: float = 4.0     # s, speed response
 
     @property
     def max_rudder(self) -> float:
@@ -54,6 +60,21 @@ class VesselConfig:
 
 
 @dataclass
+class EnvironmentConfig:
+    """Environmental disturbances (fossen3 model only)."""
+    current_speed: float = 0.0           # cells/s water current
+    current_direction_deg: float = 0.0   # direction the current flows TOWARD
+    wind_gust_accel: float = 0.0         # std of seeded gust accel (cells/s^2)
+    randomize: bool = False              # scenario-seeded random current/gusts
+    max_random_current: float = 0.3      # cells/s when randomize is on
+
+    def current_vector(self):
+        rad = np.radians(self.current_direction_deg)
+        return (self.current_speed * np.cos(rad),
+                self.current_speed * np.sin(rad))
+
+
+@dataclass
 class ControlConfig:
     """PD autopilot mapping desired heading -> rudder command."""
     heading_kp: float = 1.0
@@ -61,14 +82,14 @@ class ControlConfig:
     # Slow down in large course changes (good seamanship; reduces drift):
     # speed factor ramps from 1.0 at slowdown_start_deg to min_speed_factor
     # at slowdown_full_deg of heading error.
-    slowdown_start_deg: float = 20.0
-    slowdown_full_deg: float = 70.0
-    min_speed_factor: float = 0.4
+    slowdown_start_deg: float = 15.0
+    slowdown_full_deg: float = 60.0
+    min_speed_factor: float = 0.3
 
 
 @dataclass
 class PlannerConfig:
-    safety_margin: int = 6               # obstacle inflation for A* (cells)
+    safety_margin: int = 7               # obstacle inflation for A* (cells)
     max_segment_length: float = 15.0     # waypoint injection limit (cells)
 
 
@@ -136,6 +157,7 @@ class Config:
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
     world: WorldConfig = field(default_factory=WorldConfig)
     vessel: VesselConfig = field(default_factory=VesselConfig)
+    environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     control: ControlConfig = field(default_factory=ControlConfig)
     planner: PlannerConfig = field(default_factory=PlannerConfig)
     follower: FollowerConfig = field(default_factory=FollowerConfig)
@@ -166,7 +188,8 @@ class Config:
 
         sections = {
             "simulation": SimulationConfig, "world": WorldConfig,
-            "vessel": VesselConfig, "control": ControlConfig,
+            "vessel": VesselConfig, "environment": EnvironmentConfig,
+            "control": ControlConfig,
             "planner": PlannerConfig, "follower": FollowerConfig,
             "avoidance": AvoidanceConfig, "rl": RLConfig,
             "training": TrainingConfig,

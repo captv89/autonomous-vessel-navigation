@@ -87,7 +87,8 @@ class VesselNavEnv(gym.Env):
         # Shaped land/wall proximity penalty from the lidar the agent sees
         # (terminal grounding alone is too sparse a signal to learn from).
         rw = self.config.rl.reward
-        lidar = obs_vec[6:6 + self.config.rl.n_lidar_rays]
+        n0 = self.builder.n_scalar
+        lidar = obs_vec[n0:n0 + self.config.rl.n_lidar_rays]
         min_land = float(lidar.min()) * self.config.rl.lidar_range
         if min_land < rw.land_proximity_range:
             reward_parts["land_proximity"] = rw.land_proximity * (
