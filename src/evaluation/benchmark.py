@@ -85,13 +85,18 @@ def make_agent_factory(spec: str, config: Config) -> Callable:
         from src.agents.rl_agent import RLAgent
         model_path = spec.split(":", 1)[1]
         return lambda: RLAgent(config, model_path)
+    if spec.startswith("rl-shielded:"):
+        from src.agents.shielded import ShieldedRLAgent
+        model_path = spec.split(":", 1)[1]
+        return lambda: ShieldedRLAgent(config, model_path)
     if ":" in spec:
         module_name, class_name = spec.rsplit(":", 1)
         cls = getattr(importlib.import_module(module_name), class_name)
         return lambda: cls(config)
     raise ValueError(
         f"Unknown agent spec '{spec}'. Use 'classical', 'classical-legacy', "
-        f"'rl:<model.zip>', or '<module>:<AgentClass>'.")
+        f"'rl:<model.zip>', 'rl-shielded:<model.zip>', or "
+        f"'<module>:<AgentClass>'.")
 
 
 def apply_condition(base: Config, override: Dict[str, Any]) -> Config:
@@ -161,6 +166,8 @@ def run_benchmark(base_config: Config, suite: Dict[str, Any],
     (out / "results.json").write_text(json.dumps(results, indent=1))
     report = _leaderboard_markdown(results)
     (out / "leaderboard.md").write_text(report)
+    from src.evaluation.html_report import write_html
+    write_html(out / "results.json", out / "index.html")
     logger.info("Benchmark written to %s", out)
     return out / "leaderboard.md"
 

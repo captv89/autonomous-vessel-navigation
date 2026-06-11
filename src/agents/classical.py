@@ -169,9 +169,12 @@ class ClassicalAgent(Agent):
             explanation["avoidance"] = avoidance_info
 
         # 4. Slow down through large course changes (reduces tracking drift)
-        # and on final approach (controlled arrival).
+        # and on final approach (controlled arrival); the avoider may also
+        # demand reduced speed for an emergency escape maneuver.
         speed_factor = self._turn_speed_factor(
             desired_heading - v["heading"])
+        speed_factor = min(speed_factor,
+                           getattr(self, "_avoidance_speed_factor", 1.0))
         if dist_to_goal < 3.0 * self.config.simulation.goal_tolerance:
             speed_factor = min(speed_factor, max(
                 0.4, dist_to_goal / (3.0 * self.config.simulation.goal_tolerance)))
@@ -211,6 +214,10 @@ class ClassicalAgent(Agent):
             track_steerer=self._make_track_steerer())
         if not decision.active:
             return desired_heading, "path_following", None
+        if decision.speed_factor < 1.0:
+            self._avoidance_speed_factor = decision.speed_factor
+        else:
+            self._avoidance_speed_factor = 1.0
         info = {
             "reason": decision.reason,
             "offset_deg": decision.offset_deg,

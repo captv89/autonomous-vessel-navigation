@@ -33,7 +33,8 @@ SteerFn = Callable[[Tuple[float, float]], Optional[float]]
 # Candidate course offsets in degrees; negative = starboard (heading 0=East,
 # positive angles counter-clockwise). Starboard candidates come first so
 # they win ties, encoding the COLREGs preference.
-DEFAULT_OFFSETS_DEG = [-15, -30, -45, -60, -90, 15, 30, 45, 60, 90]
+DEFAULT_OFFSETS_DEG = [-15, -30, -45, -60, -90, -120, -150,
+                       15, 30, 45, 60, 90, 120, 150, 180]
 
 
 @dataclass
@@ -43,6 +44,7 @@ class CandidateResult:
     hits_land: bool
     leaves_world: bool
     safe: bool
+    hazard_time: float = float("inf")     # when the rollout met land/boundary
     heading: Optional[float] = None       # None for the track candidate
     offset_deg: Optional[float] = None
     reject_reason: str = ""
@@ -62,6 +64,8 @@ class AvoidanceDecision:
     active: bool
     heading: Optional[float] = None       # absolute commanded heading when active
     offset_deg: Optional[float] = None
+    speed_factor: float = 1.0             # commanded speed multiplier
+    emergency: bool = False
     reason: str = ""
     candidates: List[CandidateResult] = field(default_factory=list)
 
@@ -81,11 +85,22 @@ class PredictiveAvoider:
         self.replan_interval = 1.0                  # s between re-evaluations
         self.land_buffer = 2.0                      # cells of clearance to land
         self.current = (0.0, 0.0)                   # drift estimate for rollouts
+        # Shield mode: also guard against land/boundaries when no traffic
+        # is present (the classical agent's planner makes that redundant,
+        # so it stays off by default for speed).
+        self.engage_without_traffic = False
+        # Shield mode: re-check the proposed track on every call instead of
+        # throttling — a safety filter must vet every new proposal, since
+        # the "track" (the policy's intent) can change between calls.
+        self.always_check_track = False
         self.reset()
 
     def reset(self) -> None:
+        self._vetted_track_heading: Optional[float] = None
         self.committed_heading: Optional[float] = None
         self.committed_offset: Optional[float] = None
+        self.committed_speed_factor = 1.0
+        self.committed_emergency = False
         self.committed_reason = ""
         self._last_plan_t = -np.inf
         self._last_candidates: List[CandidateResult] = []
@@ -106,13 +121,15 @@ class PredictiveAvoider:
         that follows the planned route (used to roll out the baseline).
         Falls back to constant `track_heading` when not provided.
         """
-        if not obstacles:
+        if not obstacles and not self.engage_without_traffic:
             self.reset()
             return AvoidanceDecision(active=False, reason="no traffic")
 
-        if t - self._last_plan_t < self.replan_interval:
+        throttled = t - self._last_plan_t < self.replan_interval
+        if throttled and (self.active or not self.always_check_track):
             return self._hold()
         self._last_plan_t = t
+        self._vetted_track_heading = track_heading
 
         # Out-of-bounds matters only on the encounter timescale: a candidate
         # may exit the (finite) world long after traffic is cleared, because
@@ -121,17 +138,23 @@ class PredictiveAvoider:
         oob_grace = float(np.clip(max_tcpa + 10.0, 15.0, self.horizon))
 
         def track_rollout() -> CandidateResult:
+            # For the engage/resume decision, static hazards (land, world
+            # boundary) only count when imminent: a course that would meet
+            # land in a minute is the helmsman's business to correct later,
+            # not a reason to override now. Traffic separation keeps the
+            # full prediction horizon.
             steer = track_steerer() if track_steerer else None
             result = self._rollout(vessel_state, obstacles,
                                    target_heading=track_heading,
-                                   steer_fn=steer, oob_grace=oob_grace)
+                                   steer_fn=steer, oob_grace=20.0,
+                                   land_grace=20.0)
             result.label = "track"
             return result
 
         track_result = track_rollout()
 
         if not self.active:
-            if track_result.min_separation >= self.safe_distance:
+            if track_result.safe:
                 return AvoidanceDecision(
                     active=False,
                     reason=f"route safe (predicted miss "
@@ -139,9 +162,8 @@ class PredictiveAvoider:
                     candidates=[track_result])
             return self._plan(vessel_state, track_heading, obstacles,
                               track_result, oob_grace,
-                              trigger=f"route miss "
-                                      f"{track_result.min_separation:.1f} < "
-                                      f"{self.safe_distance:.1f}")
+                              trigger=f"route unsafe: "
+                                      f"{track_result.reject_reason}")
 
         # Currently committed: resume the route as soon as it is safe again
         # (separation AND land both clear, since we may be well off-path).
@@ -155,7 +177,8 @@ class PredictiveAvoider:
         # Still avoiding: is the committed maneuver still good?
         committed = self._rollout(vessel_state, obstacles,
                                   target_heading=self.committed_heading,
-                                  oob_grace=oob_grace)
+                                  oob_grace=oob_grace,
+                                  speed_factor=self.committed_speed_factor)
         if committed.safe:
             return self._hold()
         return self._plan(vessel_state, track_heading, obstacles,
@@ -170,6 +193,8 @@ class PredictiveAvoider:
         return AvoidanceDecision(
             active=True, heading=self.committed_heading,
             offset_deg=self.committed_offset,
+            speed_factor=self.committed_speed_factor,
+            emergency=self.committed_emergency,
             reason=self.committed_reason,
             candidates=self._last_candidates)
 
@@ -187,52 +212,88 @@ class PredictiveAvoider:
                 worst = max(worst, -(rx * rvx + ry * rvy) / v2)
         return worst
 
-    def _plan(self, vs: Dict[str, float], track_heading: float,
-              obstacles: List[Dict[str, float]],
-              track_result: CandidateResult, oob_grace: float,
-              trigger: str) -> AvoidanceDecision:
-        results: List[CandidateResult] = [track_result]
+    def _evaluate_offsets(self, vs, track_heading, obstacles, oob_grace,
+                          speed_factor):
+        results: List[CandidateResult] = []
         chosen: Optional[CandidateResult] = None
         for off in self.offsets_deg:
             heading = track_heading + np.radians(off)
             result = self._rollout(vs, obstacles, target_heading=heading,
-                                   oob_grace=oob_grace)
+                                   oob_grace=oob_grace,
+                                   speed_factor=speed_factor)
             result.offset_deg = off
-            side = "stbd" if off < 0 else "port"
-            result.label = f"{side}{abs(off):.0f}"
+            side = ("stbd" if off < 0
+                    else "port" if 0 < off < 180 else "reverse")
+            result.label = (f"{side}{abs(off):.0f}"
+                            if side in ("stbd", "port") else side)
+            if speed_factor < 1.0:
+                result.label += f"@{speed_factor:.1f}u"
             results.append(result)
             if chosen is None and result.safe:
                 chosen = result
-        self._last_candidates = results
+        return results, chosen
+
+    EMERGENCY_SPEED_FACTOR = 0.4
+
+    def _plan(self, vs: Dict[str, float], track_heading: float,
+              obstacles: List[Dict[str, float]],
+              track_result: CandidateResult, oob_grace: float,
+              trigger: str) -> AvoidanceDecision:
+        results, chosen = self._evaluate_offsets(
+            vs, track_heading, obstacles, oob_grace, speed_factor=1.0)
+        speed_factor = 1.0
+        emergency = False
 
         if chosen is None:
-            # Nothing predicted fully safe: take the largest predicted miss
-            # among candidates that stay in the world and off the land.
-            pool = [r for r in results[1:]
-                    if not r.hits_land and not r.leaves_world] or results[1:]
-            chosen = max(pool, key=lambda r: r.min_separation)
+            # Second pass at reduced speed: turn rate is speed-independent,
+            # so slowing down shrinks the turning radius relative to drift
+            # and often makes an escape feasible (good seamanship, too).
+            slow, chosen = self._evaluate_offsets(
+                vs, track_heading, obstacles, oob_grace,
+                speed_factor=self.EMERGENCY_SPEED_FACTOR)
+            results += slow
+            speed_factor = self.EMERGENCY_SPEED_FACTOR
+
+        if chosen is None:
+            # Still nothing safe: prefer candidates that stay in the world
+            # and off the land; otherwise maximize survival time (latest
+            # predicted hazard), then miss distance.
+            emergency = True
+            pool = [r for r in results
+                    if not r.hits_land and not r.leaves_world] or results
+            chosen = max(pool, key=lambda r: (r.hazard_time,
+                                              r.min_separation))
             reason = (f"EMERGENCY ({trigger}): no safe candidate, best is "
                       f"{chosen.label} miss {chosen.min_separation:.1f}")
         else:
             reason = (f"avoid ({trigger}): {chosen.label}, predicted miss "
                       f"{chosen.min_separation:.1f}")
 
+        self._last_candidates = [track_result] + results
         self.committed_heading = chosen.heading
         self.committed_offset = chosen.offset_deg
+        self.committed_speed_factor = speed_factor
+        self.committed_emergency = emergency
         self.committed_reason = reason
         return AvoidanceDecision(active=True, heading=chosen.heading,
-                                 offset_deg=chosen.offset_deg, reason=reason,
-                                 candidates=results)
+                                 offset_deg=chosen.offset_deg,
+                                 speed_factor=speed_factor,
+                                 emergency=emergency, reason=reason,
+                                 candidates=self._last_candidates)
 
     def _rollout(self, vs: Dict[str, float],
                  obstacles: List[Dict[str, float]],
                  target_heading: float,
                  steer_fn: Optional[SteerFn] = None,
-                 oob_grace: float = 40.0) -> CandidateResult:
+                 oob_grace: float = 40.0,
+                 land_grace: float = float("inf"),
+                 speed_factor: float = 1.0) -> CandidateResult:
         """Simulate a candidate and report the predicted outcome."""
         cfg = self.config
         dt = self.rollout_dt
         n = int(self.horizon / dt)
+        commanded_speed = (None if speed_factor >= 1.0
+                           else speed_factor * cfg.vessel.cruise_speed)
 
         model = make_vessel(cfg, x=vs["x"], y=vs["y"],
                             heading=vs["heading"], speed=vs["speed"],
@@ -246,6 +307,7 @@ class PredictiveAvoider:
 
         target = target_heading
         min_sep = float("inf")
+        hazard_time = float("inf")
         hits_land = leaves_world = False
         for i in range(1, n + 1):
             if steer_fn is not None:
@@ -256,15 +318,18 @@ class PredictiveAvoider:
             err = np.arctan2(np.sin(err), np.cos(err))
             rudder = (cfg.control.heading_kp * err
                       - cfg.control.heading_kd * model.get_turn_rate())
-            model.update(dt, rudder_command=rudder)
+            model.update(dt, rudder_command=rudder,
+                         desired_speed=commanded_speed)
             x, y = model.get_position()
             t = i * dt
 
             if not (0 <= x < self.world.width and 0 <= y < self.world.height):
                 leaves_world = t < oob_grace
+                hazard_time = t
                 break
             if self._near_land(x, y):
-                hits_land = True
+                hits_land = t < land_grace
+                hazard_time = t
                 break
             for ob in obstacles:
                 ox = ob["x"] + ob["speed"] * np.cos(ob["heading"]) * t
@@ -280,7 +345,7 @@ class PredictiveAvoider:
         return CandidateResult(label="", heading=target_heading,
                                min_separation=min_sep, hits_land=hits_land,
                                leaves_world=leaves_world, safe=safe,
-                               reject_reason=reject)
+                               hazard_time=hazard_time, reject_reason=reject)
 
     def _near_land(self, x: float, y: float) -> bool:
         gx, gy = int(x), int(y)

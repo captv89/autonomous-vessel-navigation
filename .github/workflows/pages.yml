@@ -1,0 +1,49 @@
+name: Deploy leaderboard to GitHub Pages
+
+# Publishes the committed benchmark results (reports/benchmark-v1) as a
+# static leaderboard page. The HTML is regenerated from results.json at
+# deploy time so the page always matches the committed numbers.
+#
+# One-time repository setup: Settings -> Pages -> Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "reports/benchmark-v1/results.json"
+      - "src/evaluation/html_report.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build leaderboard page
+        run: |
+          mkdir -p _site
+          python src/evaluation/html_report.py \
+            reports/benchmark-v1/results.json _site/index.html
+          cp reports/benchmark-v1/leaderboard.md _site/leaderboard.md
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

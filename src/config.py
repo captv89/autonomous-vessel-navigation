@@ -105,6 +105,7 @@ class FollowerConfig:
 class AvoidanceConfig:
     implementation: str = "predictive"   # "predictive" (v2) or "legacy"
     safe_distance: float = 10.0          # minimum acceptable CPA (cells)
+    shield_safe_distance: float = 6.0    # tighter envelope for the RL shield
     warning_distance: float = 18.0       # distance at which avoidance engages
     detector_safe_distance: float = 8.0  # CPA risk-assessment threshold
     detector_warning_distance: float = 15.0

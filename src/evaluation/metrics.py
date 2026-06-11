@@ -64,6 +64,11 @@ def compute_metrics(steps: List[Dict[str, Any]], outcome: str,
     if modes:
         metrics["avoidance_step_fraction"] = round(
             sum(1 for m in modes if m == "avoidance") / len(modes), 3)
+    shield_flags = [d["shield"]["intervened"] for d in decisions
+                    if isinstance(d.get("shield"), dict)]
+    if shield_flags:
+        metrics["shield_intervention_fraction"] = round(
+            sum(shield_flags) / len(shield_flags), 3)
     ctes = [abs(d["cross_track_error"]) for d in decisions
             if "cross_track_error" in d]
     if ctes:
@@ -107,7 +112,7 @@ def aggregate(per_episode: List[Dict[str, Any]]) -> Dict[str, Any]:
     for key in ("duration_s", "path_length", "path_efficiency",
                 "min_separation", "near_miss_steps", "mean_abs_rudder_deg",
                 "mean_abs_cross_track", "avoidance_step_fraction",
-                "starboard_turn_fraction"):
+                "starboard_turn_fraction", "shield_intervention_fraction"):
         pool = ([m for m in per_episode if m.get("success")]
                 if key in success_only else per_episode)
         values = [m[key] for m in pool

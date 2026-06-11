@@ -3,8 +3,8 @@ message: "If you use VesselNav-Bench or this simulator in your research, please 
 title: "VesselNav-Bench: a transparent benchmark for autonomous vessel navigation"
 type: software
 authors:
-  # TODO: replace with your name and (optionally) ORCID before release
-  - name: "captv89"
+  - family-names: "Ravendranathan"
+    given-names: "Vishnu"
 repository-code: "https://github.com/captv89/autonomous-vessel-navigation"
 license: MIT
 keywords:

@@ -122,3 +122,6 @@ def test_benchmark_end_to_end_smoke(tmp_path):
     assert "benchmark_score" in agent
     text = report.read_text()
     assert "Leaderboard" in text and "classical" in text
+    html = (tmp_path / "index.html").read_text()
+    assert "<html" in html and "classical" in html
+    assert str(agent["benchmark_score"]) in html
