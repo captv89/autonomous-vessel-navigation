@@ -19,6 +19,16 @@ collision / grounding rates with Wilson 95% CIs, COLREGs-compliance scores
 per encounter type, and efficiency metrics with bootstrap CIs; every number
 is backed by a replayable episode log.
 
+Current baselines on
+[VesselNav-Bench v1](reports/benchmark-v1/leaderboard.md)
+(280 seeded episodes per agent per condition, calm condition shown):
+
+| Agent | Score | Success | Collision | COLREGs | Time to goal |
+|---|---|---|---|---|---|
+| classical (A* + ILOS + predictive avoidance) | 97.4 | 100% | 0% | 0.94 | 56.4 s |
+| classical-legacy (original avoider, ablation) | 85.1 | 84.3% | 0% | 0.80 | 49.2 s |
+| rl_ppo (PPO, 1M steps, mixed curriculum) | 79.4 | 80.0% | 0.7% | 0.67 | 41.2 s |
+
 ## How the comparison stays fair and transparent
 
 - **One physics engine.** All agents drive the same headless

@@ -82,6 +82,6 @@ training:
   batch_size: 512
   gamma: 0.995
   ent_coef: 0.01
-  scenario: random
+  scenario: random,random_encounter
   model_dir: models
   log_dir: runs
