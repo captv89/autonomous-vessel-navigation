@@ -244,10 +244,6 @@ def _leaderboard_markdown(results: Dict[str, Any]) -> str:
                 f"| {fmt_mean(c['min_separation'])} |")
         # Per-encounter compliance breakdown
         lines += ["", "Per-encounter COLREGs compliance:", ""]
-        header = "| Agent | " + " | ".join(
-            sorted({enc for a in ranked
-                    for enc in a["conditions"][cond]["colregs"]
-                    .get("by_encounter", {})})) + " |"
         encounter_types = sorted({
             enc for a in ranked
             for enc in a["conditions"][cond]["colregs"]

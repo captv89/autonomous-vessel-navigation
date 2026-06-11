@@ -174,6 +174,53 @@ def random_scenario(seed: Optional[int] = None) -> Scenario:
         circle_obstacles=circles, traffic=traffic, seed=seed)
 
 
+def random_encounter(seed: Optional[int] = None) -> Scenario:
+    """Seeded collision-course encounter with randomized geometry.
+
+    One traffic vessel is placed so that, holding course and speed, it
+    reaches the own-ship's straight track exactly when the own ship does —
+    a guaranteed close-quarters situation with a randomly drawn encounter
+    angle. Used for training agents on COLREGs-relevant traffic without
+    exposing them to the benchmark's fixed exam geometries.
+    """
+    rng = np.random.default_rng(seed)
+    start, goal = (12.0, 50.0), (88.0, 50.0)
+    own_speed = 2.5                     # nominal cruise (config default)
+
+    # Meeting point ahead on the own-ship track
+    meet_x = rng.uniform(40.0, 65.0)
+    t_meet = (meet_x - start[0]) / own_speed
+    # Encounter angle relative to own course (0 = same direction):
+    # head-on, starboard/port crossings, or overtaking-ish geometry.
+    angle = rng.choice([180.0, -90.0, 90.0,
+                        rng.uniform(120, 180), rng.uniform(-150, -60),
+                        rng.uniform(60, 150), 15.0])
+    speed = (1.0 if abs(angle) < 30 else float(rng.uniform(1.5, 2.5)))
+    # Traffic course such that the drawn angle is the relative encounter
+    # angle (180 = reciprocal/head-on, -90 = crossing from starboard).
+    heading = np.radians(angle + 180.0)
+    # Place the vessel so it arrives at the meeting point at t_meet
+    tx = meet_x - speed * np.cos(heading) * t_meet
+    ty = 50.0 - speed * np.sin(heading) * t_meet
+
+    traffic = [TrafficSpec(x=float(tx), y=float(ty),
+                           heading_deg=float(np.degrees(heading)),
+                           speed=float(speed))]
+    # Occasionally a second, non-conflicting wanderer
+    if rng.random() < 0.4:
+        wx, wy = rng.uniform(25, 75), rng.choice([20.0, 80.0])
+        traffic.append(TrafficSpec(
+            x=float(wx), y=float(wy),
+            heading_deg=float(rng.uniform(-180, 180)),
+            speed=float(rng.uniform(1.0, 2.0))))
+
+    return Scenario(
+        name="random_encounter",
+        description=f"Randomized collision-course encounter (seed={seed}).",
+        start=start, start_heading_deg=0, goal=goal,
+        traffic=traffic, seed=seed)
+
+
 SCENARIOS = {
     "open_water": open_water,
     "head_on": head_on,
@@ -182,6 +229,7 @@ SCENARIOS = {
     "overtaking": overtaking,
     "coastal": coastal,
     "random": random_scenario,
+    "random_encounter": random_encounter,
 }
 
 

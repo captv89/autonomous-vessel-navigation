@@ -32,7 +32,11 @@ class VesselNavEnv(gym.Env):
                  seed: Optional[int] = None):
         super().__init__()
         self.config = config or Config()
+        # scenario_name may be a comma-separated mix; one is sampled per
+        # episode (e.g. "random,random_encounter").
         self.scenario_name = scenario_name or self.config.training.scenario
+        self._scenario_pool = [n.strip()
+                               for n in self.scenario_name.split(",")]
         self.builder = ObservationBuilder(self.config)
         self.heading_actions = [np.radians(a)
                                 for a in self.config.rl.heading_actions_deg]
@@ -53,8 +57,12 @@ class VesselNavEnv(gym.Env):
         super().reset(seed=seed)
         if seed is not None:
             self._rng = np.random.default_rng(seed)
-        scenario_seed = int(self._rng.integers(0, 2**31 - 1))
-        scenario = build_scenario(self.scenario_name, seed=scenario_seed)
+        # Benchmark seeds (1000..) are held out by convention: train seeds
+        # start above them.
+        scenario_seed = int(self._rng.integers(10_000, 2**31 - 1))
+        name = self._scenario_pool[
+            int(self._rng.integers(len(self._scenario_pool)))]
+        scenario = build_scenario(name, seed=scenario_seed)
         self.engine = SimulationEngine(self.config, scenario)
         obs = self.engine.reset()
         self._prev_goal_distance = obs.distance_to_goal

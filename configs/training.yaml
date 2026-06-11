@@ -4,3 +4,5 @@ environment:
   randomize: true
   max_random_current: 0.3
   wind_gust_accel: 0.03
+training:
+  scenario: "random,random_encounter"
