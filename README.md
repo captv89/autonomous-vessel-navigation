@@ -38,17 +38,18 @@ is backed by a replayable episode log.
 
 Current leaderboard on
 [VesselNav-Bench v1](reports/benchmark-v1/leaderboard.md)
-(280 seeded episodes per agent per condition, calm condition shown;
-RL trained 4M steps):
+(9 scenarios x 20 seeded episodes per condition = 360 episodes per agent;
+calm condition shown):
 
-| Agent | Author | Score | Success | Coll. | Ground. | COLREGs | Time |
-|---|---|---|---|---|---|---|---|
-| classical | VesselNav-Bench | 97.8 | 100% | 0% | 0% | 0.94 | 56.9 s |
-| mpc | VesselNav-Bench | 96.5 | 99.3% | 0% | 0% | 0.93 | **49.2 s** |
-| velocity-obstacles | Fiorini & Shiller (1998) | 95.6 | 99.3% | 0% | 0% | 0.88 | 55.1 s |
-| classical-legacy | VesselNav-Bench | 85.1 | 84.3% | 0% | 15.7% | 0.80 | 49.2 s |
-| rl_ppo_shielded | VesselNav-Bench | 84.4 | 84.3% | **0%** | **0%** | 0.78 | 48.3 s |
-| rl_ppo | VesselNav-Bench | 81.9 | 83.6% | 0% | 16.4% | 0.69 | 40.9 s |
+| # | Agent | Author | Score | Success | Coll. | Ground. | COLREGs | Time |
+|---|---|---|---|---|---|---|---|---|
+| 1 | classical | VesselNav-Bench | 97.9 | 100% | 0% | 0% | 0.95 | 63.2 s |
+| 2 | mpc | VesselNav-Bench | 97.0 | 99.4% | 0% | 0% | 0.93 | **46.6 s** |
+| 3 | velocity-obstacles | Fiorini & Shiller (1998) | 93.9 | 99.4% | 0% | 0% | 0.82 | 55.5 s |
+| 4 | classical-legacy | VesselNav-Bench | 88.1 | 87.8% | 0% | 12.2% | 0.84 | 49.4 s |
+| 5 | rl_ppo_shielded | VesselNav-Bench | 86.5 | 87.8% | **0%** | **0%** | 0.79 | 48.2 s |
+| 6 | rl_ppo (PPO, 4M steps) | VesselNav-Bench | 82.4 | 87.2% | 0% | 12.8% | 0.62 | 39.5 s |
+| 7 | potential-fields | Khatib (1986) | 48.4 | 44.4% | 55.6% | 0% | 0.33 | 71.9 s |
 
 Three headline observations fall out of the table:
 
