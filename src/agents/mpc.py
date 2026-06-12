@@ -97,6 +97,7 @@ class MPCAgent(Agent):
 
     def __init__(self, config: Config):
         self.config = config
+        self.waypoints: List[Tuple[float, float]] = []
         self.horizon = 45.0
         self.replan_interval = 1.0
         self.rollout_dt = 0.5

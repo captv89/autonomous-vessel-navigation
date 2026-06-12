@@ -45,6 +45,7 @@ class VOAgent(Agent):
 
     def __init__(self, config: Config):
         self.config = config
+        self.waypoints: List[Tuple[float, float]] = []
         self.horizon = 60.0                  # VO time horizon tau (s)
         self.combined_radius = config.avoidance.safe_distance
         self.land_lookahead = 25.0           # cells of land ray-check
