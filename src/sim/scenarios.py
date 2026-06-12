@@ -174,6 +174,34 @@ def random_scenario(seed: Optional[int] = None) -> Scenario:
         circle_obstacles=circles, traffic=traffic, seed=seed)
 
 
+def multi_vessel(seed: Optional[int] = None) -> Scenario:
+    return Scenario(
+        name="multi_vessel",
+        description="Two simultaneous conflicts: a reciprocal-course vessel "
+                    "ahead and a give-way crossing from starboard, timed to "
+                    "overlap. Tests rule interplay under multi-ship load.",
+        start=(10, 50), start_heading_deg=0, goal=(90, 50),
+        traffic=[
+            TrafficSpec(x=90, y=50, heading_deg=180, speed=2.0),
+            TrafficSpec(x=52, y=14, heading_deg=90, speed=2.0),
+            TrafficSpec(x=70, y=78, heading_deg=-115, speed=1.5),
+        ],
+        seed=seed)
+
+
+def narrow_channel(seed: Optional[int] = None) -> Scenario:
+    return Scenario(
+        name="narrow_channel",
+        description="A narrow fairway between two coasts with an oncoming "
+                    "vessel inside the channel: limited sea room to both "
+                    "sides while resolving a Rule 14 encounter (Rule 9 "
+                    "flavor).",
+        start=(8, 50), start_heading_deg=0, goal=(92, 50),
+        rect_obstacles=[(0, 0, 100, 36), (0, 64, 100, 36)],
+        traffic=[TrafficSpec(x=90, y=53, heading_deg=180, speed=1.5)],
+        seed=seed)
+
+
 def random_encounter(seed: Optional[int] = None) -> Scenario:
     """Seeded collision-course encounter with randomized geometry.
 
@@ -228,6 +256,8 @@ SCENARIOS = {
     "crossing_port": crossing_port,
     "overtaking": overtaking,
     "coastal": coastal,
+    "multi_vessel": multi_vessel,
+    "narrow_channel": narrow_channel,
     "random": random_scenario,
     "random_encounter": random_encounter,
 }

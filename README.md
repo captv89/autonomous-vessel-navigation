@@ -119,6 +119,8 @@ episode with pause/step/speed controls and a decision-inspector panel.
 | `crossing_port` | Rule 17 (stand-on) | Traffic from port: hold course and speed while it remains safe |
 | `overtaking` | Rule 13 | Slow vessel ahead, same course: overtaker keeps clear, either side |
 | `coastal` | Mixed | Landmasses forming a channel + two traffic vessels |
+| `multi_vessel` | Rules 14+15 | Two simultaneous conflicts timed to overlap + a passer-by |
+| `narrow_channel` | Rule 14 / Rule 9 flavor | Oncoming vessel inside a narrow fairway, limited sea room |
 | `random` | Mixed | Seeded random islands and wandering traffic |
 | `random_encounter` | 13/14/15 (training only) | Randomized guaranteed collision-course geometry; held out of the exam |
 
@@ -140,6 +142,7 @@ differently:
 | `rl:<model>` | Learning | VesselNav-Bench baseline | A PPO neural policy trained in the simulator; no hand-written rules — behavior emerges from reward. Logs its action probabilities and value estimate every decision |
 | `rl-shielded:<model>` | Hybrid | VesselNav-Bench baseline | The PPO policy proposes; a classical predictive filter vets every proposal and substitutes the nearest safe course when needed |
 | `submissions...:VOAgent` | Reactive | Fiorini & Shiller (1998) | **Example external submission**: Velocity Obstacles — steer the velocity closest to the preferred course that lies outside every obstacle's collision cone |
+| `submissions...:APFAgent` | Reactive | Khatib (1986) | **Example external submission**: Artificial Potential Fields — follow the resultant of attractive (route) and repulsive (traffic, land) forces; historically foundational, known weaknesses included on purpose |
 
 ```mermaid
 flowchart LR

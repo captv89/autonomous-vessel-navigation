@@ -21,6 +21,8 @@ scenarios:
   - crossing_port
   - overtaking
   - coastal
+  - multi_vessel
+  - narrow_channel
   - random
 
 # Each condition is a (partial) config override applied on top of the

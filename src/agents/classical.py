@@ -48,13 +48,25 @@ class ClassicalAgent(Agent):
 
     def metadata(self) -> Dict[str, Any]:
         cfg = self.config
+        if cfg.avoidance.implementation == "legacy":
+            summary = ("Ablation of the classical pipeline: same A* route "
+                       "and ILOS guidance, but collision avoidance uses the "
+                       "project's original commitment-based avoider, which "
+                       "lacks route-aware rollouts and reduced-speed escape "
+                       "maneuvers. Kept to quantify how much the avoidance "
+                       "layer contributes.")
+        else:
+            summary = ("A* plans the route, ILOS guidance tracks it, and a "
+                       "predictive COLREGs-inspired avoider overrides the "
+                       "helm when rollouts with the real vessel dynamics "
+                       "predict a conflict on the route.")
         return {
             "name": self.name, "type": type(self).__name__,
-            "family": "rule-based (layered)",
+            "family": ("rule-based (layered, original avoider)"
+                       if cfg.avoidance.implementation == "legacy"
+                       else "rule-based (layered)"),
             "author": "V. Ravendranathan (VesselNav-Bench baseline)",
-            "summary": "A* plans the route, ILOS guidance tracks it, and a "
-                       "predictive COLREGs-inspired avoider overrides the "
-                       "helm when traffic conflicts are predicted.",
+            "summary": summary,
             "planner": "A* + string pulling",
             "follower": cfg.follower.type,
             "avoidance": cfg.avoidance.implementation,
