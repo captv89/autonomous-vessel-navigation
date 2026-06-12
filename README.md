@@ -175,6 +175,8 @@ main.py                 CLI: scenarios / simulate / train / evaluate /
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
 benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
 docs/SUBMITTING.md      how to score your own model on the benchmark
+docs/SIMULATOR.md       what the simulator models, gap analysis vs the
+                        literature, and open review questions for mariners
 src/
   config.py             typed config dataclasses
   sim/                  engine.py (headless physics loop), scenarios.py,
