@@ -1,6 +1,6 @@
 # vesselnav-bench v1 - Leaderboard
 
-Generated: 2026-06-11T19:23:50  
+Generated: 2026-06-12T07:18:32  
 Scenarios: open_water, head_on, crossing_starboard, crossing_port, overtaking, coastal, random x 20 episodes (seeds 1000..)  
 Config hash: calm: `1baf1e352220ed61`, disturbed: `9571b64e338c5753`
 
@@ -12,9 +12,10 @@ Config hash: calm: `1baf1e352220ed61`, disturbed: `9571b64e338c5753`
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | **classical** | **97.8** | 100.0% [97.3%, 100.0%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.94 (n=108) | 56.9 [53.8, 60.4] | 0.95 [0.93, 0.97] | 14.24 [12.91, 15.92] |
 | 2 | **mpc** | **96.5** | 99.3% [96.1%, 99.9%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.93 (n=113) | 49.2 [46.8, 51.8] | 0.91 [0.89, 0.93] | 14.58 [13.08, 16.33] |
-| 3 | **rl_ppo_shielded** | **85.6** | 85.7% [79.0%, 90.6%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.79 (n=111) | 45.7 [42.3, 50.5] | 0.95 [0.93, 0.97] | 13.50 [11.86, 15.39] |
+| 3 | **velocity-obstacles** | **95.6** | 99.3% [96.1%, 99.9%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.88 (n=108) | 55.1 [52.4, 58.2] | 0.93 [0.92, 0.95] | 14.28 [12.88, 15.98] |
 | 4 | **classical-legacy** | **85.1** | 84.3% [77.3%, 89.4%] | 0.0% [0.0%, 2.7%] | 15.7% [10.6%, 22.7%] | 0.80 (n=107) | 49.2 [47.5, 51.1] | 0.97 [0.95, 0.98] | 13.04 [11.39, 14.92] |
-| 5 | **rl_ppo** | **79.4** | 80.0% [72.6%, 85.8%] | 0.7% [0.1%, 3.9%] | 18.6% [13.0%, 25.8%] | 0.67 (n=107) | 41.2 [39.8, 42.6] | 0.98 [0.97, 0.98] | 12.53 [10.75, 14.52] |
+| 5 | **rl_ppo_shielded** | **84.4** | 84.3% [77.3%, 89.4%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.78 (n=111) | 48.3 [41.1, 59.8] | 0.95 [0.92, 0.98] | 13.98 [12.55, 15.72] |
+| 6 | **rl_ppo** | **81.9** | 83.6% [76.5%, 88.8%] | 0.0% [0.0%, 2.7%] | 16.4% [11.2%, 23.4%] | 0.69 (n=108) | 40.9 [40.2, 41.5] | 0.97 [0.96, 0.97] | 12.80 [11.20, 14.64] |
 
 Per-encounter COLREGs compliance:
 
@@ -22,9 +23,10 @@ Per-encounter COLREGs compliance:
 |---|---|---|---|
 | classical | 0.76 (n=25) | 0.99 (n=63) | 1.00 (n=20) |
 | mpc | 0.76 (n=30) | 0.99 (n=63) | 1.00 (n=20) |
-| rl_ppo_shielded | 0.78 (n=48) | 0.95 (n=43) | 0.50 (n=20) |
+| velocity-obstacles | 0.76 (n=25) | 0.89 (n=63) | 1.00 (n=20) |
 | classical-legacy | 0.76 (n=25) | 0.75 (n=62) | 1.00 (n=20) |
-| rl_ppo | 0.76 (n=42) | 0.66 (n=45) | 0.50 (n=20) |
+| rl_ppo_shielded | 0.76 (n=47) | 0.94 (n=44) | 0.50 (n=20) |
+| rl_ppo | 0.76 (n=45) | 0.70 (n=43) | 0.50 (n=20) |
 
 ## Condition: disturbed
 
@@ -32,9 +34,10 @@ Per-encounter COLREGs compliance:
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | **classical** | **97.6** | 100.0% [97.3%, 100.0%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.94 (n=105) | 61.1 [57.1, 65.6] | 0.94 [0.92, 0.96] | 14.25 [12.86, 15.95] |
 | 2 | **mpc** | **95.6** | 97.9% [93.9%, 99.3%] | 0.0% [0.0%, 2.7%] | 0.0% [0.0%, 2.7%] | 0.92 (n=111) | 47.6 [45.1, 50.6] | 0.93 [0.91, 0.95] | 14.23 [12.55, 16.03] |
-| 3 | **rl_ppo_shielded** | **86.3** | 90.7% [84.8%, 94.5%] | 0.7% [0.1%, 3.9%] | 0.7% [0.1%, 3.9%] | 0.74 (n=111) | 55.0 [49.2, 61.7] | 0.89 [0.85, 0.92] | 13.74 [12.08, 15.57] |
-| 4 | **classical-legacy** | **80.8** | 79.3% [71.8%, 85.2%] | 5.7% [2.9%, 10.9%] | 14.3% [9.4%, 21.0%] | 0.76 (n=109) | 49.1 [46.9, 51.9] | 0.95 [0.93, 0.97] | 12.32 [10.54, 14.30] |
-| 5 | **rl_ppo** | **74.9** | 73.6% [65.7%, 80.2%] | 2.9% [1.1%, 7.1%] | 17.1% [11.8%, 24.2%] | 0.65 (n=107) | 40.3 [38.9, 41.9] | 0.98 [0.96, 0.98] | 12.35 [10.55, 14.36] |
+| 3 | **velocity-obstacles** | **94.4** | 97.9% [93.9%, 99.3%] | 0.7% [0.1%, 3.9%] | 0.0% [0.0%, 2.7%] | 0.87 (n=106) | 55.1 [52.1, 58.4] | 0.93 [0.92, 0.95] | 14.00 [12.60, 15.70] |
+| 4 | **rl_ppo_shielded** | **85.6** | 90.7% [84.8%, 94.5%] | 0.0% [0.0%, 2.7%] | 2.1% [0.7%, 6.1%] | 0.76 (n=107) | 62.2 [55.2, 70.2] | 0.82 [0.77, 0.86] | 14.64 [13.19, 16.44] |
+| 5 | **classical-legacy** | **80.8** | 79.3% [71.8%, 85.2%] | 5.7% [2.9%, 10.9%] | 14.3% [9.4%, 21.0%] | 0.76 (n=109) | 49.1 [46.9, 51.9] | 0.95 [0.93, 0.97] | 12.32 [10.54, 14.30] |
+| 6 | **rl_ppo** | **80.2** | 81.4% [74.2%, 87.0%] | 2.1% [0.7%, 6.1%] | 15.0% [10.0%, 21.8%] | 0.68 (n=107) | 40.9 [40.2, 41.7] | 0.96 [0.95, 0.97] | 12.95 [11.32, 14.77] |
 
 Per-encounter COLREGs compliance:
 
@@ -42,9 +45,20 @@ Per-encounter COLREGs compliance:
 |---|---|---|---|
 | classical | 0.76 (n=24) | 0.99 (n=61) | 1.00 (n=20) |
 | mpc | 0.74 (n=30) | 0.97 (n=61) | 0.99 (n=20) |
-| rl_ppo_shielded | 0.76 (n=45) | 0.83 (n=46) | 0.50 (n=20) |
+| velocity-obstacles | 0.76 (n=23) | 0.90 (n=63) | 0.91 (n=20) |
+| rl_ppo_shielded | 0.76 (n=46) | 0.89 (n=41) | 0.50 (n=20) |
 | classical-legacy | 0.57 (n=25) | 0.76 (n=64) | 1.00 (n=20) |
-| rl_ppo | 0.76 (n=42) | 0.61 (n=45) | 0.50 (n=20) |
+| rl_ppo | 0.76 (n=43) | 0.67 (n=44) | 0.50 (n=20) |
+
+
+## The agents
+
+- **classical** — rule-based (layered); by V. Ravendranathan (VesselNav-Bench baseline). A* plans the route, ILOS guidance tracks it, and a predictive COLREGs-inspired avoider overrides the helm when traffic conflicts are predicted.
+- **classical-legacy** — rule-based (layered); by V. Ravendranathan (VesselNav-Bench baseline). A* plans the route, ILOS guidance tracks it, and a predictive COLREGs-inspired avoider overrides the helm when traffic conflicts are predicted.
+- **mpc** — optimization (model predictive control); by V. Ravendranathan (VesselNav-Bench baseline). Solves a local optimal-control problem each second: candidate maneuver plans are rolled out with the real dynamics and scored by one cost combining progress, separation, effort, and a COLREGs prior.
+- **rl_ppo** — learning (deep reinforcement learning); by V. Ravendranathan (VesselNav-Bench baseline). PPO policy over a labeled 35-feature observation (goal vector, own dynamics, land lidar, nearest traffic); each decision logs the full action probability distribution and value estimate.
+- **rl_ppo_shielded** — hybrid (learning + runtime safety filter); by V. Ravendranathan (VesselNav-Bench baseline). The PPO policy proposes; a classical predictive filter vets every proposal with real-dynamics rollouts and substitutes the nearest safe course when needed. Every intervention is logged.
+- **velocity-obstacles** — reactive (velocity space); by Fiorini & Shiller (1998); reference implementation. Picks the velocity closest to the preferred course that lies outside every obstacle's collision cone (starboard-preferring, A* route reference).
 
 ## Reproducing / submitting
 

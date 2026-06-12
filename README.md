@@ -36,29 +36,34 @@ collision / grounding rates with Wilson 95% CIs, COLREGs-compliance scores
 per encounter type, and efficiency metrics with bootstrap CIs; every number
 is backed by a replayable episode log.
 
-Current baselines on
+Current leaderboard on
 [VesselNav-Bench v1](reports/benchmark-v1/leaderboard.md)
-(280 seeded episodes per agent per condition, calm condition shown):
+(280 seeded episodes per agent per condition, calm condition shown;
+RL trained 4M steps):
 
-| Agent | Score | Success | Collision | Grounding | COLREGs | Time to goal |
-|---|---|---|---|---|---|---|
-| classical (A* + ILOS + predictive avoidance) | 97.8 | 100% | 0% | 0% | 0.94 | 56.9 s |
-| mpc (A* + sampling MPC, unified cost) | 96.5 | 99.3% | 0% | 0% | 0.93 | **49.2 s** |
-| **rl_ppo_shielded** (PPO + runtime safety filter) | 85.6 | 85.7% | **0%** | **0%** | 0.79 | 45.7 s |
-| classical-legacy (original avoider, ablation) | 85.1 | 84.3% | 0% | 15.7% | 0.80 | 49.2 s |
-| rl_ppo (PPO, 1M steps, unshielded) | 79.4 | 80.0% | 0.7% | 18.6% | 0.67 | 41.2 s |
+| Agent | Author | Score | Success | Coll. | Ground. | COLREGs | Time |
+|---|---|---|---|---|---|---|---|
+| classical | VesselNav-Bench | 97.8 | 100% | 0% | 0% | 0.94 | 56.9 s |
+| mpc | VesselNav-Bench | 96.5 | 99.3% | 0% | 0% | 0.93 | **49.2 s** |
+| velocity-obstacles | Fiorini & Shiller (1998) | 95.6 | 99.3% | 0% | 0% | 0.88 | 55.1 s |
+| classical-legacy | VesselNav-Bench | 85.1 | 84.3% | 0% | 15.7% | 0.80 | 49.2 s |
+| rl_ppo_shielded | VesselNav-Bench | 84.4 | 84.3% | **0%** | **0%** | 0.78 | 48.3 s |
+| rl_ppo | VesselNav-Bench | 81.9 | 83.6% | 0% | 16.4% | 0.69 | 40.9 s |
 
-Two headline experiments fall out of the table:
+Three headline observations fall out of the table:
 
-- **Safety shielding**: wrapping the learned policy in a classical
-  predictive filter eliminates *all* of its collisions and groundings
-  (0.7% / 18.6% → 0 / 0) while keeping most of its speed advantage — and
-  every shield intervention is logged, so the division of labor between
-  policy and shield is measurable per episode.
-- **Three families, one exam**: rule-based, optimization-based, and
-  learned navigation are scored on identical seeded episodes with
-  identical ground-truth metrics — the comparison existing papers make
-  across incompatible setups.
+- **Three families plus a published external method, one exam**:
+  rule-based, optimization-based, learned, and the classic Velocity
+  Obstacles method (submitted exactly as any third party would — see
+  [docs/SUBMITTING.md](docs/SUBMITTING.md)) are scored on identical
+  seeded episodes with identical ground-truth metrics.
+- **Safety shielding works**: wrapping the learned policy in a classical
+  predictive filter removes all groundings (16.4% → 0) at a small cost in
+  speed, with every intervention logged per decision.
+- **Learning closes in but doesn't win (yet)**: 4M training steps lifted
+  the pure policy to 83.6% success and zero collisions in calm water, but
+  unfamiliar landmass shapes still ground it — the benchmark localizes
+  exactly where the generalization gap lives.
 
 ## How the comparison stays fair and transparent
 

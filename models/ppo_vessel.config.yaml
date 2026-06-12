@@ -44,6 +44,7 @@ follower:
 avoidance:
   implementation: predictive
   safe_distance: 10.0
+  shield_safe_distance: 6.0
   warning_distance: 18.0
   detector_safe_distance: 8.0
   detector_warning_distance: 15.0
