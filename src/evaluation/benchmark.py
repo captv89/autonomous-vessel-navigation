@@ -128,7 +128,15 @@ def run_benchmark(base_config: Config, suite: Dict[str, Any],
     }
 
     for spec in agent_specs:
-        agent_results: Dict[str, Any] = {"spec": spec, "conditions": {}}
+        probe_meta = make_agent_factory(spec, base_config)().metadata()
+        agent_results: Dict[str, Any] = {
+            "spec": spec, "conditions": {},
+            "about": {
+                "family": probe_meta.get("family", ""),
+                "author": probe_meta.get("author", ""),
+                "summary": probe_meta.get("summary", ""),
+            },
+        }
         for cond_name, override in suite["conditions"].items():
             config = apply_condition(base_config, override)
             results["config_hash"][cond_name] = config_hash(config)
@@ -269,7 +277,14 @@ def _leaderboard_markdown(results: Dict[str, Any]) -> str:
                 lines.append(f"| {agent['name']} | " + " | ".join(row) + " |")
         lines.append("")
 
+    lines += ["", "## The agents", ""]
+    for agent in agents.values():
+        about = agent.get("about", {})
+        lines.append(f"- **{agent['name']}** — {about.get('family', '')}; "
+                     f"by {about.get('author', 'unknown')}. "
+                     f"{about.get('summary', '')}")
     lines += [
+        "",
         "## Reproducing / submitting",
         "",
         "```bash",

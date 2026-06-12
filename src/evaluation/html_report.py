@@ -52,11 +52,31 @@ code { background:#22304a; padding:1px 6px; border-radius:4px;
 .figs { display:flex; flex-wrap:wrap; gap:20px; margin-top:18px; }
 .figs figure { background:var(--card); border-radius:10px;
                padding:14px 16px 8px; margin:0; flex:1 1 460px;
-               min-width:340px; }
+               min-width:280px; }
 .figs figcaption { color:var(--dim); font-size:.85em; font-weight:600;
                    text-transform:uppercase; letter-spacing:.05em;
                    margin-bottom:8px; }
 .figs svg { width:100%; height:auto; }
+.tablewrap { overflow-x:auto; -webkit-overflow-scrolling:touch;
+             border-radius:10px; }
+.author { display:block; color:var(--dim); font-size:.8em;
+          font-weight:400; }
+.cards { display:grid; gap:14px;
+         grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); }
+.card { background:var(--card); border-radius:10px; padding:14px 16px; }
+.card h4 { margin:0 0 4px; font-size:1em; }
+.card .author { margin-bottom:6px; }
+.card p { margin:0; color:var(--dim); font-size:.9em; }
+.fam { display:inline-block; font-size:.72em; color:#7db8e8;
+       border:1px solid #2a3f5e; border-radius:99px; padding:1px 9px;
+       margin-left:6px; vertical-align:middle; }
+@media (max-width: 640px) {
+  .wrap { padding:18px 12px 48px; }
+  h1 { font-size:1.45em; }
+  table { font-size:.82em; }
+  th, td { padding:7px 8px; }
+  .scorebar { width:70px; }
+}
 """
 
 
@@ -74,6 +94,32 @@ def _mean(ci, digits=2) -> str:
 
 AGENT_COLORS = ["#5dd39e", "#5da9e8", "#e8c45a", "#e8865a", "#b48ce8",
                 "#8ce8dd"]
+
+SCENARIO_INFO = {
+    "open_water": ("No obstacles", "Pure route following, no rule applies"),
+    "head_on": ("Rule 14 — head-on", "Reciprocal courses; both vessels "
+                "must alter to starboard and pass port-to-port"),
+    "crossing_starboard": ("Rule 15/16 — give-way", "Traffic crosses from "
+                           "starboard; own ship must take early, "
+                           "substantial action to keep clear"),
+    "crossing_port": ("Rule 17 — stand-on", "Traffic crosses from port; "
+                      "own ship should hold course while it remains safe"),
+    "overtaking": ("Rule 13 — overtaking", "Slow vessel ahead on the same "
+                   "course; overtaking vessel keeps clear, either side"),
+    "coastal": ("Mixed", "Landmasses forming a channel plus two traffic "
+                "vessels; planning and avoidance together"),
+    "random": ("Mixed", "Seeded random islands and wandering traffic"),
+}
+
+VESSEL_MODEL_NOTE = (
+    "All agents steer the same own-ship model: a 3-DOF surge–sway–yaw "
+    "maneuvering model (first-order Nomoto yaw response, sideslip toward "
+    "−k·u·r, turn-induced speed loss, first-order surge), an IMO-standard "
+    "rudder actuator (35° limit, 70°-in-11-s slew rate), and a "
+    "course-over-ground PD autopilot. Disturbed episodes add a "
+    "scenario-seeded water current (drifting the traffic too) and wind "
+    "gusts. Agents command intent (desired course and speed); the physics "
+    "decides what the hull does.")
 OUTCOME_COLORS = {"goal": "#3fa874", "collision": "#d9534f",
                   "grounding": "#e8965a", "out_of_bounds": "#9b6fd4",
                   "timeout": "#7d8694"}
@@ -167,6 +213,62 @@ def _svg_safety_speed(agents_ranked, cond: str) -> str:
             f'{"".join(grid)}{"".join(dots)}{axis}</svg>')
 
 
+def _svg_radar(agents_ranked, cond: str, scenarios) -> str:
+    """Per-scenario success rate, one polygon per agent."""
+    import math
+    size, R = 460, 150
+    cx, cy = size / 2, size / 2 + 8
+    n_ax = len(scenarios)
+
+    def point(axis: int, frac: float):
+        ang = -math.pi / 2 + 2 * math.pi * axis / n_ax
+        return (cx + R * frac * math.cos(ang),
+                cy + R * frac * math.sin(ang))
+
+    grid = []
+    for ring in (0.25, 0.5, 0.75, 1.0):
+        pts = " ".join(f"{point(i, ring)[0]:.0f},{point(i, ring)[1]:.0f}"
+                       for i in range(n_ax))
+        grid.append(f'<polygon points="{pts}" fill="none" '
+                    f'stroke="#243149" stroke-width="1"/>')
+    labels = []
+    for i, name in enumerate(scenarios):
+        lx, ly = point(i, 1.22)
+        anchor = ("middle" if abs(lx - cx) < 30
+                  else "start" if lx > cx else "end")
+        labels.append(f'<text x="{lx:.0f}" y="{ly:.0f}" '
+                      f'text-anchor="{anchor}" fill="#9aa3b2" '
+                      f'font-size="11">{name.replace("_", " ")}</text>')
+        ax_x, ax_y = point(i, 1.0)
+        grid.append(f'<line x1="{cx}" y1="{cy}" x2="{ax_x:.0f}" '
+                    f'y2="{ax_y:.0f}" stroke="#243149" stroke-width="1"/>')
+
+    polys, legend = [], []
+    for k, agent in enumerate(agents_ranked):
+        episodes = agent["conditions"][cond]["episodes"]
+        color = AGENT_COLORS[k % len(AGENT_COLORS)]
+        fracs = []
+        for name in scenarios:
+            eps = [e for e in episodes if e["scenario"] == name]
+            fracs.append(sum(1 for e in eps if e.get("success"))
+                         / max(len(eps), 1))
+        pts = " ".join(f"{point(i, f)[0]:.0f},{point(i, f)[1]:.0f}"
+                       for i, f in enumerate(fracs))
+        polys.append(f'<polygon points="{pts}" fill="{color}" '
+                     f'fill-opacity="0.10" stroke="{color}" '
+                     f'stroke-width="2"><title>{agent["name"]}</title>'
+                     f'</polygon>')
+        ly = 14 + k * 17
+        legend.append(f'<rect x="6" y="{ly - 9}" width="11" height="11" '
+                      f'rx="2" fill="{color}"/>'
+                      f'<text x="22" y="{ly + 1}" fill="#e8ebf0" '
+                      f'font-size="11.5">{agent["name"]}</text>')
+    return (f'<svg viewBox="0 0 {size} {size}" role="img" '
+            f'aria-label="Per-scenario success rate by agent">'
+            f'{"".join(grid)}{"".join(labels)}{"".join(polys)}'
+            f'{"".join(legend)}</svg>')
+
+
 def _compliance_cell(score: float, n: int) -> str:
     # red (0) -> amber (0.5) -> green (1)
     r = int(217 - score * (217 - 63))
@@ -202,6 +304,32 @@ conditions</span>
 from ground-truth episode logs. Scores are comparable only between runs
 with identical config hashes.</div>"""]
 
+    # ------------------------------------------------ about the benchmark
+    agent_cards = []
+    for agent in agents.values():
+        about = agent.get("about", {})
+        agent_cards.append(
+            f'<div class="card"><h4>{agent["name"]}'
+            f'<span class="fam">{about.get("family", "")}</span></h4>'
+            f'<span class="author">by {about.get("author", "unknown")}'
+            f'</span><p>{about.get("summary", "")}</p></div>')
+    scenario_rows = "".join(
+        f"<tr><td><code>{name}</code></td><td>{SCENARIO_INFO[name][0]}"
+        f"</td><td>{SCENARIO_INFO[name][1]}</td></tr>"
+        for name in suite["scenarios"] if name in SCENARIO_INFO)
+    parts.append(f"""<h2>The agents</h2>
+<div class="cards">{''.join(agent_cards)}</div>
+<h2>What is being tested</h2>
+<p class="sub">{VESSEL_MODEL_NOTE}</p>
+<div class="tablewrap"><table><thead><tr><th>Scenario</th>
+<th>COLREGs rule</th><th>Situation</th></tr></thead>
+<tbody>{scenario_rows}</tbody></table></div>
+<p class="sub" style="margin-top:10px">Each scenario runs
+{suite['episodes_per_scenario']} seeded episodes per condition;
+<b>calm</b> has no disturbances, <b>disturbed</b> adds a scenario-seeded
+random current (up to 0.3 cells/s) and wind gusts. Every agent faces the
+identical episodes.</p>""")
+
     for cond in conditions:
         ranked = sorted(agents.values(),
                         key=lambda a: a["conditions"][cond]["benchmark_score"],
@@ -209,6 +337,7 @@ with identical config hashes.</div>"""]
         rows = []
         for rank, agent in enumerate(ranked, 1):
             c = agent["conditions"][cond]
+            author = agent.get("about", {}).get("author", "")
             colregs = c["colregs"]
             colregs_str = (f"{colregs['mean_score']:.2f} "
                            f"<span class='ci'>(n={colregs['encounters']})"
@@ -217,7 +346,8 @@ with identical config hashes.</div>"""]
             bar = int(min(max(c["benchmark_score"], 0), 100) * 1.4)
             rows.append(f"""<tr>
 <td class="rank">{rank}</td>
-<td class="agent">{agent['name']}</td>
+<td class="agent">{agent['name']}
+    <span class="author">{author}</span></td>
 <td><span class="score">{c['benchmark_score']}</span>
     <span class="scorebar"><i style="width:{bar}px"></i></span></td>
 <td>{_rate(c['success'])}</td>
@@ -243,20 +373,24 @@ with identical config hashes.</div>"""]
                             f"{cells}</tr>")
 
         parts.append(f"""<h2>Condition: {cond}</h2>
+<div class="tablewrap">
 <table><thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Success</th>
 <th>Collision</th><th>Grounding</th><th>COLREGs</th>
 <th>Time to goal (s)</th><th>Min separation</th></tr></thead>
-<tbody>{''.join(rows)}</tbody></table>
+<tbody>{''.join(rows)}</tbody></table></div>
 <div class="figs">
 <figure><figcaption>Episode outcomes</figcaption>
 {_svg_outcome_bars(ranked, cond)}</figure>
 <figure><figcaption>Safety vs speed trade-off</figcaption>
 {_svg_safety_speed(ranked, cond)}</figure>
+<figure><figcaption>Success rate by scenario</figcaption>
+{_svg_radar(ranked, cond, suite['scenarios'])}</figure>
 </div>
 <h3 style="color:var(--dim)">COLREGs compliance by encounter type</h3>
+<div class="tablewrap">
 <table><thead><tr><th>Agent</th>
 {''.join(f'<th>{e}</th>' for e in encounter_types)}</tr></thead>
-<tbody>{''.join(enc_rows)}</tbody></table>""")
+<tbody>{''.join(enc_rows)}</tbody></table></div>""")
 
     parts.append("""<h2>Submit your model</h2>
 <p>Implement the <code>Agent</code> contract

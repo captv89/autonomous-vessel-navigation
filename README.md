@@ -104,27 +104,37 @@ uv run python main.py evaluate --model models/ppo_vessel --episodes 10
 `--render` opens the pygame viewer (live); `replay` opens any recorded
 episode with pause/step/speed controls and a decision-inspector panel.
 
-## Scenarios
+## Scenarios and the COLREGs rules they test
 
-| Name | Description |
-|---|---|
-| `open_water` | No obstacles; pure path following |
-| `head_on` | COLREGs Rule 14 reciprocal encounter |
-| `crossing_starboard` | Rule 15, own ship gives way |
-| `crossing_port` | Stand-on, but must act if needed |
-| `overtaking` | Rule 13, slow vessel ahead |
-| `coastal` | Landmasses + mixed traffic |
-| `random` | Seeded generator (islands + traffic) used for training/eval suites |
-
-## The five built-in baselines
-
-| Spec | Family | One-line description |
+| Name | COLREGs rule | Situation |
 |---|---|---|
-| `classical` | Rule-based | A* route + ILOS guidance + predictive COLREGs avoidance override |
-| `classical-legacy` | Rule-based (ablation) | Same pipeline with the original avoidance module |
-| `mpc` | Optimization | A* route + sampling MPC: one cost function unifies tracking, traffic separation, effort, and a COLREGs prior |
-| `rl:<model>` | Learning | PPO over a labeled 35-feature observation, helm-order actions |
-| `rl-shielded:<model>` | Hybrid | The PPO policy inside a predictive runtime safety filter; every intervention logged |
+| `open_water` | — | No obstacles; pure route following |
+| `head_on` | Rule 14 | Reciprocal courses: both vessels alter to starboard, pass port-to-port |
+| `crossing_starboard` | Rules 15/16 (give-way) | Traffic from starboard: take early, substantial action to keep clear |
+| `crossing_port` | Rule 17 (stand-on) | Traffic from port: hold course and speed while it remains safe |
+| `overtaking` | Rule 13 | Slow vessel ahead, same course: overtaker keeps clear, either side |
+| `coastal` | Mixed | Landmasses forming a channel + two traffic vessels |
+| `random` | Mixed | Seeded random islands and wandering traffic |
+| `random_encounter` | 13/14/15 (training only) | Randomized guaranteed collision-course geometry; held out of the exam |
+
+Benchmark conditions: **calm** (no disturbances) and **disturbed**
+(scenario-seeded random current up to 0.3 cells/s + wind gusts) — every
+agent faces the identical seeded episodes.
+
+## The agents, in plain language
+
+Every agent answers the same question each step — *"given what I can see,
+what course and speed do I order?"* — but arrives at the answer
+differently:
+
+| Spec | Family | Author | How it decides |
+|---|---|---|---|
+| `classical` | Rule-based | VesselNav-Bench baseline | A* plans a route, ILOS guidance steers along it, and a predictive COLREGs avoider overrides the helm when a rollout predicts a conflict — explicit rules, layered like a ship's bridge team |
+| `classical-legacy` | Rule-based (ablation) | VesselNav-Bench baseline | The same pipeline with the project's original avoidance module — kept to measure how much the avoider matters |
+| `mpc` | Optimization | VesselNav-Bench baseline | Solves a small optimal-control problem every second: simulate candidate maneuver plans with the real physics, pick the cheapest by one cost (progress + separation + effort + COLREGs prior) |
+| `rl:<model>` | Learning | VesselNav-Bench baseline | A PPO neural policy trained in the simulator; no hand-written rules — behavior emerges from reward. Logs its action probabilities and value estimate every decision |
+| `rl-shielded:<model>` | Hybrid | VesselNav-Bench baseline | The PPO policy proposes; a classical predictive filter vets every proposal and substitutes the nearest safe course when needed |
+| `submissions...:VOAgent` | Reactive | Fiorini & Shiller (1998) | **Example external submission**: Velocity Obstacles — steer the velocity closest to the preferred course that lies outside every obstacle's collision cone |
 
 ```mermaid
 flowchart LR

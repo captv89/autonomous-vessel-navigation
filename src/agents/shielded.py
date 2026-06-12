@@ -51,6 +51,12 @@ class ShieldedRLAgent(Agent):
         meta = self.policy.metadata()
         meta.update({
             "name": self.name, "type": type(self).__name__,
+            "family": "hybrid (learning + runtime safety filter)",
+            "author": "V. Ravendranathan (VesselNav-Bench baseline)",
+            "summary": "The PPO policy proposes; a classical predictive "
+                       "filter vets every proposal with real-dynamics "
+                       "rollouts and substitutes the nearest safe course "
+                       "when needed. Every intervention is logged.",
             "shield": "predictive rollout filter",
             "shield_safe_distance":
                 self.config.avoidance.shield_safe_distance,

@@ -46,6 +46,12 @@ class RLAgent(Agent):
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": self.name, "type": type(self).__name__,
+            "family": "learning (deep reinforcement learning)",
+            "author": "V. Ravendranathan (VesselNav-Bench baseline)",
+            "summary": "PPO policy over a labeled 35-feature observation "
+                       "(goal vector, own dynamics, land lidar, nearest "
+                       "traffic); each decision logs the full action "
+                       "probability distribution and value estimate.",
             "algorithm": "PPO (stable-baselines3)",
             "model_path": str(self.model_path),
             "deterministic": self.deterministic,

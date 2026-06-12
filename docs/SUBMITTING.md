@@ -69,6 +69,37 @@ intervals), `results.json` (every number, recomputable), and
 `episodes/` (a replayable JSONL log of every episode:
 `python main.py replay <file>`).
 
+## Worked example: a published model on the leaderboard
+
+The repository ships a complete external submission you can copy as a
+template: `submissions/velocity_obstacles.py` implements **Velocity
+Obstacles** (P. Fiorini & Z. Shiller, *Motion Planning in Dynamic
+Environments Using Velocity Obstacles*, IJRR 1998) in ~180 lines against
+the `Agent` contract — note how it declares its method `author` and
+`summary` in `metadata()`, which the leaderboard displays:
+
+```python
+def metadata(self):
+    return {
+        "name": self.name,
+        "family": "reactive (velocity space)",
+        "author": "Fiorini & Shiller (1998); reference implementation",
+        "summary": "Picks the velocity closest to the preferred course "
+                   "that lies outside every obstacle's collision cone.",
+        ...
+    }
+```
+
+Score it (or your copy of it) with:
+
+```bash
+uv run python main.py benchmark --suite benchmarks/v1.yaml \
+    --agent classical --agent submissions.velocity_obstacles:VOAgent
+```
+
+Credit the original method's authors in `author` when you implement a
+published approach; use your own name for novel ones.
+
 ## 3. Rules
 
 - Do not modify the suite file, the physics config, or the engine. Results

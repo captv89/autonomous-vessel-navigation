@@ -106,6 +106,12 @@ class MPCAgent(Agent):
     def metadata(self) -> Dict[str, Any]:
         return {
             "name": self.name, "type": type(self).__name__,
+            "family": "optimization (model predictive control)",
+            "author": "V. Ravendranathan (VesselNav-Bench baseline)",
+            "summary": "Solves a local optimal-control problem each second: "
+                       "candidate maneuver plans are rolled out with the "
+                       "real dynamics and scored by one cost combining "
+                       "progress, separation, effort, and a COLREGs prior.",
             "planner": "A* (global) + sampling MPC (local)",
             "horizon_s": self.horizon,
             "lattice": f"{len(OFFSETS_DEG)} offsets x "

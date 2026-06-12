@@ -50,6 +50,11 @@ class ClassicalAgent(Agent):
         cfg = self.config
         return {
             "name": self.name, "type": type(self).__name__,
+            "family": "rule-based (layered)",
+            "author": "V. Ravendranathan (VesselNav-Bench baseline)",
+            "summary": "A* plans the route, ILOS guidance tracks it, and a "
+                       "predictive COLREGs-inspired avoider overrides the "
+                       "helm when traffic conflicts are predicted.",
             "planner": "A* + string pulling",
             "follower": cfg.follower.type,
             "avoidance": cfg.avoidance.implementation,
