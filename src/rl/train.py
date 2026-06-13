@@ -5,6 +5,15 @@ Usage:
     uv run python -m src.rl.train [--config configs/default.yaml]
                                   [--timesteps N] [--scenario random]
                                   [--out models/ppo_vessel]
+                                  [--finetune models/ppo_10m]
+
+--scenario accepts a comma-separated list for curriculum mixing, e.g.
+    --scenario random,coastal,coastal,coastal
+Each episode independently samples from the pool (uniform), so repetition
+biases the draw without hard phasing.
+
+--finetune loads an existing model's weights and continues training on the
+new scenario mix — the recommended way to do curriculum continuation.
 
 Training is seeded and the resolved config is saved next to the model so
 every run is reproducible. Metrics stream to `runs/` (TensorBoard format if
@@ -33,7 +42,8 @@ def make_env_fn(config: Config, scenario: str, rank: int, base_seed: int):
 
 
 def train(config: Config, total_timesteps: int, scenario: str,
-          out_path: str, n_envs: int | None = None) -> str:
+          out_path: str, n_envs: int | None = None,
+          finetune: str | None = None) -> str:
     from stable_baselines3 import PPO
     from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,
                                                   VecNormalize)
@@ -59,20 +69,26 @@ def train(config: Config, total_timesteps: int, scenario: str,
     except ImportError:
         tb_log = None
 
-    model = PPO(
-        "MlpPolicy", vec_env,
-        learning_rate=tr.learning_rate,
-        n_steps=max(tr.n_steps // n_envs, 64),
-        batch_size=tr.batch_size,
-        gamma=tr.gamma,
-        ent_coef=tr.ent_coef,
-        seed=tr.seed,
-        verbose=1,
-        device="cpu",            # MLP policy: CPU is faster than GPU here
-        tensorboard_log=tb_log)
+    if finetune:
+        logger.info("Loading weights from %s for curriculum continuation", finetune)
+        model = PPO.load(finetune, env=vec_env, device="cpu",
+                         tensorboard_log=tb_log)
+    else:
+        model = PPO(
+            "MlpPolicy", vec_env,
+            learning_rate=tr.learning_rate,
+            n_steps=max(tr.n_steps // n_envs, 64),
+            batch_size=tr.batch_size,
+            gamma=tr.gamma,
+            ent_coef=tr.ent_coef,
+            seed=tr.seed,
+            verbose=1,
+            device="cpu",
+            tensorboard_log=tb_log)
 
-    logger.info("Training PPO for %d timesteps on scenario '%s' (%d envs)",
-                total_timesteps, scenario, n_envs)
+    logger.info("Training PPO for %d timesteps on scenario '%s' (%d envs)%s",
+                total_timesteps, scenario, n_envs,
+                f" (finetuning from {finetune})" if finetune else "")
     model.learn(total_timesteps=total_timesteps, progress_bar=False)
 
     model.save(out)
@@ -86,9 +102,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=None, help="YAML config path")
     parser.add_argument("--timesteps", type=int, default=None)
-    parser.add_argument("--scenario", default=None)
+    parser.add_argument("--scenario", default=None,
+                        help="Scenario name or comma-separated pool, e.g. random,coastal,coastal")
     parser.add_argument("--out", default="models/ppo_vessel")
     parser.add_argument("--n-envs", type=int, default=None)
+    parser.add_argument("--finetune", default=None, metavar="MODEL_PATH",
+                        help="Load weights from this model and continue training (curriculum)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -98,7 +117,8 @@ def main() -> None:
           total_timesteps=args.timesteps or config.training.total_timesteps,
           scenario=args.scenario or config.training.scenario,
           out_path=args.out,
-          n_envs=args.n_envs)
+          n_envs=args.n_envs,
+          finetune=args.finetune)
 
 
 if __name__ == "__main__":
