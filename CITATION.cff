@@ -2,6 +2,8 @@ cff-version: 1.2.0
 message: "If you use VesselNav-Bench or this simulator in your research, please cite it as below."
 title: "VesselNav-Bench: a transparent benchmark for autonomous vessel navigation"
 type: software
+version: 1.0.0
+date-released: 2026-06-14
 authors:
   - family-names: "Ravendranathan"
     given-names: "Vishnu"
