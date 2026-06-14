@@ -248,3 +248,21 @@ Covers dynamics (rudder-rate, Nomoto steady turn), engine termination and
 determinism, follower switching (incl. the missed-waypoint regression),
 avoidance COLREGs preference and hysteresis, classical agent end-to-end,
 gymnasium API/reward decomposition, and recorder/metrics round-trips.
+
+## Citing VesselNav-Bench
+
+If you use VesselNav-Bench in your research, please cite it. Each release is
+archived on Zenodo with a versioned DOI (added here once the v1.0.0 release
+is archived — see [`CITATION.cff`](CITATION.cff) for machine-readable
+metadata):
+
+```bibtex
+@software{ravendranathan_vesselnavbench_2026,
+  author  = {Ravendranathan, Vishnu},
+  title   = {{VesselNav-Bench}: a transparent benchmark for
+             autonomous vessel navigation},
+  version = {1.0.0},
+  year    = {2026},
+  url     = {https://github.com/captv89/autonomous-vessel-navigation}
+}
+```
