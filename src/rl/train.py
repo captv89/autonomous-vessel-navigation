@@ -57,11 +57,6 @@ def train(config: Config, total_timesteps: int, scenario: str,
 
     env_fns = [make_env_fn(config, scenario, i, tr.seed) for i in range(n_envs)]
     vec_env = (SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns))
-    # Return normalization stabilizes PPO's value/advantage scales; the
-    # policy's observation interface is untouched (norm_obs=False), so the
-    # saved model needs no normalization stats at inference time.
-    vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True,
-                           gamma=tr.gamma)
 
     try:
         import tensorboard  # noqa: F401
@@ -70,10 +65,29 @@ def train(config: Config, total_timesteps: int, scenario: str,
         tb_log = None
 
     if finetune:
+        vecnorm_path = Path(finetune).with_suffix(".vecnorm")
+        if vecnorm_path.exists():
+            # Restore the reward-normalizer running stats so the value function
+            # calibration from the base model remains valid on the new scenario mix.
+            logger.info("Restoring VecNormalize stats from %s", vecnorm_path)
+            vec_env = VecNormalize.load(str(vecnorm_path), vec_env)
+            vec_env.training = True
+        else:
+            logger.warning(
+                "No VecNormalize stats found at %s — starting normalizer from "
+                "scratch; value-function scale may be mismatched for ~1M steps",
+                vecnorm_path)
+            vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True,
+                                   gamma=tr.gamma)
         logger.info("Loading weights from %s for curriculum continuation", finetune)
         model = PPO.load(finetune, env=vec_env, device="cpu",
                          tensorboard_log=tb_log)
     else:
+        # Return normalization stabilizes PPO's value/advantage scales; the
+        # policy's observation interface is untouched (norm_obs=False), so the
+        # saved model needs no normalization stats at inference time.
+        vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True,
+                               gamma=tr.gamma)
         model = PPO(
             "MlpPolicy", vec_env,
             learning_rate=tr.learning_rate,
@@ -92,6 +106,7 @@ def train(config: Config, total_timesteps: int, scenario: str,
     model.learn(total_timesteps=total_timesteps, progress_bar=False)
 
     model.save(out)
+    vec_env.save(str(out.with_suffix(".vecnorm")))
     config.save(out.with_suffix(".config.yaml"))
     vec_env.close()
     logger.info("Saved model to %s.zip", out)

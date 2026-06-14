@@ -41,3 +41,6 @@ models/*
 Thumbs.db
 PROJECT_STATUS.md
 .github/copilot-instructions.md
+
+reports/benchmark-v1-run13Jun
+reports/ppo_10m_bench

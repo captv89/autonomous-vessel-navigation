@@ -131,6 +131,80 @@ def coastal(seed: Optional[int] = None) -> Scenario:
         seed=seed)
 
 
+def coastal_random(seed: Optional[int] = None) -> Scenario:
+    """Seeded procedural coastal world: random landmasses and islets forming a
+    cluttered channel, with traffic.
+
+    Deliberately distinct from the fixed `coastal` benchmark geometry: this is
+    a *training* generator for coastal planning + avoidance skill, so a policy
+    can learn to handle obstacle-strewn channels without ever seeing the exam
+    map (training on `coastal` itself would be test-set leakage). Obstacles are
+    kept clear of the straight start->goal corridor so every episode stays
+    solvable while still forcing detours around the flanking landmasses.
+    """
+    rng = np.random.default_rng(seed)
+
+    corners = [((10, 10), 45, (90, 90)), ((10, 90), -45, (90, 10)),
+               ((90, 10), 135, (10, 90)), ((90, 90), -135, (10, 10))]
+    start, heading, goal = corners[rng.integers(len(corners))]
+    margin = 11.0                       # keep the direct corridor navigable
+
+    def _corridor_pts():
+        for t in np.linspace(0.0, 1.0, 25):
+            yield (start[0] + t * (goal[0] - start[0]),
+                   start[1] + t * (goal[1] - start[1]))
+
+    def rect_clears_corridor(x, y, w, h):
+        return all(not (x - margin <= px <= x + w + margin and
+                        y - margin <= py <= y + h + margin)
+                   for px, py in _corridor_pts())
+
+    def circle_clears_corridor(cx, cy, r):
+        return all(np.hypot(cx - px, cy - py) >= r + margin
+                   for px, py in _corridor_pts())
+
+    rects: List[Tuple[int, int, int, int]] = []
+    for _ in range(rng.integers(2, 5)):
+        for _attempt in range(25):
+            w, h = int(rng.integers(8, 22)), int(rng.integers(8, 22))
+            x, y = int(rng.integers(8, 92 - w)), int(rng.integers(8, 92 - h))
+            if rect_clears_corridor(x, y, w, h):
+                rects.append((x, y, w, h))
+                break
+
+    circles: List[Tuple[int, int, int]] = []
+    for _ in range(rng.integers(1, 4)):
+        for _attempt in range(25):
+            cx, cy, r = (int(rng.integers(15, 85)), int(rng.integers(15, 85)),
+                         int(rng.integers(4, 9)))
+            if circle_clears_corridor(cx, cy, r):
+                circles.append((cx, cy, r))
+                break
+
+    def blocked(px, py):
+        if any(x <= px <= x + w and y <= py <= y + h for x, y, w, h in rects):
+            return True
+        return any(np.hypot(cx - px, cy - py) < r for cx, cy, r in circles)
+
+    traffic = []
+    for _ in range(rng.integers(1, 3)):
+        for _attempt in range(25):
+            tx, ty = rng.uniform(30, 70, size=2)
+            if not blocked(tx, ty):
+                traffic.append(TrafficSpec(
+                    x=float(tx), y=float(ty),
+                    heading_deg=float(rng.uniform(-180, 180)),
+                    speed=float(rng.uniform(1.0, 2.0))))
+                break
+
+    return Scenario(
+        name="coastal_random",
+        description=f"Procedural coastal world (seed={seed}).",
+        start=start, start_heading_deg=heading, goal=goal,
+        rect_obstacles=rects, circle_obstacles=circles, traffic=traffic,
+        seed=seed)
+
+
 def random_scenario(seed: Optional[int] = None) -> Scenario:
     """Seeded random scenario: a few islands and traffic vessels.
 
@@ -256,6 +330,7 @@ SCENARIOS = {
     "crossing_port": crossing_port,
     "overtaking": overtaking,
     "coastal": coastal,
+    "coastal_random": coastal_random,
     "multi_vessel": multi_vessel,
     "narrow_channel": narrow_channel,
     "random": random_scenario,

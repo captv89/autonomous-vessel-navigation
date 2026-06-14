@@ -5,4 +5,7 @@ environment:
   max_random_current: 0.3
   wind_gust_accel: 0.03
 training:
-  scenario: "random,random_encounter"
+  # Procedural-only pool (no fixed benchmark geometries -> no test leakage).
+  # Even thirds: random_encounter (COLREGs give-way), random (open obstacle
+  # fields), coastal_random (obstacle-channel planning) — none touch the exam map.
+  scenario: "random_encounter,random,coastal_random"
