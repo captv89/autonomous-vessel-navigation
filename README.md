@@ -11,6 +11,7 @@ one physics engine, one exam, one leaderboard.**
 [![Leaderboard](https://img.shields.io/badge/leaderboard-live-2ea44f)](https://captv89.github.io/autonomous-vessel-navigation/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20689528.svg)](https://doi.org/10.5281/zenodo.20689528)
 
 </div>
 
@@ -252,9 +253,10 @@ gymnasium API/reward decomposition, and recorder/metrics round-trips.
 ## Citing VesselNav-Bench
 
 If you use VesselNav-Bench in your research, please cite it. Each release is
-archived on Zenodo with a versioned DOI (added here once the v1.0.0 release
-is archived — see [`CITATION.cff`](CITATION.cff) for machine-readable
-metadata):
+archived on Zenodo with a versioned DOI (see [`CITATION.cff`](CITATION.cff)
+for machine-readable metadata). The concept DOI
+[10.5281/zenodo.20689528](https://doi.org/10.5281/zenodo.20689528) always
+resolves to the latest version:
 
 ```bibtex
 @software{ravendranathan_vesselnavbench_2026,
@@ -263,6 +265,7 @@ metadata):
              autonomous vessel navigation},
   version = {1.0.0},
   year    = {2026},
+  doi     = {10.5281/zenodo.20689528},
   url     = {https://github.com/captv89/autonomous-vessel-navigation}
 }
 ```

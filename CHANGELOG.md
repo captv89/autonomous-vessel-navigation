@@ -6,6 +6,8 @@ only comparable between runs with matching config hashes.
 
 ## [1.0.0] - 2026-06-14
 
+Archived on Zenodo: [10.5281/zenodo.20689528](https://doi.org/10.5281/zenodo.20689528)
+
 First public release: a 2D autonomous-vessel navigation simulator and a
 frozen, seeded benchmark (**VesselNav-Bench**) for comparing classical,
 optimization-based, and learning-based navigation policies under identical

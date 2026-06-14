@@ -4,6 +4,7 @@ title: "VesselNav-Bench: a transparent benchmark for autonomous vessel navigatio
 type: software
 version: 1.0.0
 date-released: 2026-06-14
+doi: 10.5281/zenodo.20689528
 authors:
   - family-names: "Ravendranathan"
     given-names: "Vishnu"
