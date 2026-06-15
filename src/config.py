@@ -21,7 +21,7 @@ import yaml
 @dataclass
 class SimulationConfig:
     dt: float = 0.1                      # integration timestep (s)
-    max_duration: float = 600.0          # episode timeout (s)
+    max_duration: float = 1200.0         # episode timeout (s)
     goal_tolerance: float = 5.0          # distance considered "arrived" (cells)
     collision_radius: float = 2.0        # vessel-to-vessel collision distance (cells)
     terminate_on_collision: bool = True
@@ -37,11 +37,15 @@ class WorldConfig:
 
 @dataclass
 class VesselConfig:
+    # Defaults model a ~30 m small craft to scale (cell_size = 10 m):
+    #   cruise 0.5 cells/s = 5 m/s ~= 9.7 kn; max 0.8 = 8 m/s ~= 15.6 kn.
+    #   K=0.12 with 35 deg rudder => ~4.2 deg/s steady yaw, turn radius
+    #   ~6.8 cells (~68 m, ~2.3 ship lengths) — realistic for the platform.
     model: str = "fossen3"               # "fossen3" (3-DOF) or "nomoto"
-    cruise_speed: float = 2.5            # cells/s (world is 100 cells across)
-    max_speed: float = 4.0
-    nomoto_K: float = 0.4                # yaw gain (1/s per rad of rudder)
-    nomoto_T: float = 4.0                # yaw time constant (s)
+    cruise_speed: float = 0.5            # cells/s (cell_size m each)
+    max_speed: float = 0.8
+    nomoto_K: float = 0.12               # yaw gain (1/s per rad of rudder)
+    nomoto_T: float = 3.0                # yaw time constant (s)
     max_rudder_deg: float = 35.0         # IMO standard
     rudder_rate_deg: float = 70.0 / 11.0 # IMO: 70 deg in 11 s
     # fossen3-only parameters
@@ -79,12 +83,14 @@ class ControlConfig:
     """PD autopilot mapping desired heading -> rudder command."""
     heading_kp: float = 1.0
     heading_kd: float = 1.5
-    # Slow down in large course changes (good seamanship; reduces drift):
-    # speed factor ramps from 1.0 at slowdown_start_deg to min_speed_factor
-    # at slowdown_full_deg of heading error.
+    # Optional speed reduction in large course changes. Disabled by default
+    # (min_speed_factor = 1.0): real practice is to alter COURSE, not speed
+    # (COLREGs Rule 8), and turn anticipation removes the drift this used to
+    # compensate for. Set min_speed_factor < 1.0 to re-enable the ramp from
+    # 1.0 at slowdown_start_deg to min_speed_factor at slowdown_full_deg.
     slowdown_start_deg: float = 15.0
     slowdown_full_deg: float = 60.0
-    min_speed_factor: float = 0.3
+    min_speed_factor: float = 1.0
 
 
 @dataclass
@@ -96,9 +102,14 @@ class PlannerConfig:
 @dataclass
 class FollowerConfig:
     type: str = "ilos"                   # "ilos" or "pure_pursuit"
-    lookahead: float = 18.0
+    lookahead: float = 10.0
     path_tolerance: float = 4.0
     integral_gain: float = 0.5
+    # Turn anticipation (wheel-over): switch to the next leg R*tan(dPsi/2)
+    # before a waypoint so the ship begins its alteration in advance and the
+    # turn circle fits the corner, instead of overshooting. Set to the vessel
+    # turn radius in cells; 0 disables (legacy switch-at-waypoint behavior).
+    turn_radius: float = 7.0
 
 
 @dataclass

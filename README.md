@@ -264,10 +264,32 @@ the identical realization per episode seed.
 ## Units & scale
 
 World coordinates are **grid cells** (default 100x100, `cell_size` = 10 m per
-cell, for reporting). Headings are radians internally, 0 = east,
+cell → a 1 km² arena). Headings are radians internally, 0 = east,
 counter-clockwise positive; config files use degrees where suffixed `_deg`.
-Vessel dynamics (Nomoto K/T, IMO rudder rate) are tuned so the maneuvering
-timescale fits the arena — see `configs/default.yaml` to change any of it.
+
+Defaults are **to scale for a ~30 m small craft**: cruise `0.5 cells/s`
+(5 m/s ≈ 9.7 kn), `K = 0.12` giving ~4.2 °/s steady yaw and a turn radius of
+~6.8 cells (~68 m, ~2.3 ship lengths). Traffic vessels are scaled to match
+(~0.25–0.45 cells/s). Edit `configs/default.yaml` to model a different
+platform (e.g. a merchant ship needs a larger world for its ~0.6 km turning
+circle).
+
+**Course over speed, and turn anticipation.** Two behaviors keep maneuvering
+realistic:
+
+- *Course, not speed.* `control.min_speed_factor = 1.0` disables the old
+  reduce-speed-in-turns behavior; the agent holds cruise and **alters course**
+  (COLREGs Rule 8). Speed is only reduced for a last-resort avoidance escape
+  or final approach. Set `min_speed_factor < 1.0` to restore speed reduction.
+- *Wheel-over (`follower.turn_radius`).* The ILOS follower switches to the
+  next leg `R·tan(Δψ/2)` **before** each waypoint, so the ship begins its
+  turn in advance and the turn circle fits the corner — the way bridge teams
+  and track-control systems steer — instead of overshooting and oscillating
+  back. Set `turn_radius: 0` for the legacy switch-at-waypoint behavior.
+
+> These are **v2** behavior/scale changes. The bundled `models/ppo_vessel`
+> was trained at the previous scale; **retrain it** (`main.py train`) for a
+> fair RL comparison under these defaults.
 
 ## Tests
 

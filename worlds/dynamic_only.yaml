@@ -12,7 +12,7 @@ circle_obstacles: []
 # traffic: x, y in cells; heading_deg is the course the vessel steers;
 # behavior: straight | waypoint | circular.
 traffic:
-  - {x: 90, y: 50, heading_deg: 180, speed: 2.0}          # reciprocal / head-on
-  - {x: 55, y: 12, heading_deg: 90, speed: 1.8}           # crossing from starboard
-  - {x: 30, y: 50, heading_deg: 0, speed: 1.0}            # slow vessel ahead (overtaking)
+  - {x: 90, y: 50, heading_deg: 180, speed: 0.45}         # reciprocal / head-on
+  - {x: 55, y: 12, heading_deg: 90, speed: 0.4}           # crossing from starboard
+  - {x: 30, y: 50, heading_deg: 0, speed: 0.25}           # slow vessel ahead (overtaking)
 seed: null

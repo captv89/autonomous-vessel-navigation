@@ -84,6 +84,14 @@ class PredictiveAvoider:
         self.rollout_dt = 0.5
         self.replan_interval = 1.0                  # s between re-evaluations
         self.land_buffer = 2.0                      # cells of clearance to land
+        # Maneuvering timescale: ~time to turn 90 deg (yaw lag + slew to a
+        # quarter circle). Static hazards count as "imminent" within this
+        # window, so the grace scales with the vessel dynamics instead of
+        # being a constant tuned for one speed.
+        vc = config.vessel
+        self.maneuver_time = float(np.clip(
+            vc.nomoto_T + (np.pi / 2.0) / max(vc.nomoto_K * vc.max_rudder, 1e-3),
+            15.0, self.horizon))
         self.current = (0.0, 0.0)                   # drift estimate for rollouts
         # Shield mode: also guard against land/boundaries when no traffic
         # is present (the classical agent's planner makes that redundant,
@@ -135,7 +143,8 @@ class PredictiveAvoider:
         # may exit the (finite) world long after traffic is cleared, because
         # by then the ship will be back on route.
         max_tcpa = self._max_positive_tcpa(vessel_state, obstacles)
-        oob_grace = float(np.clip(max_tcpa + 10.0, 15.0, self.horizon))
+        oob_grace = float(np.clip(max_tcpa + 10.0, self.maneuver_time,
+                                  self.horizon))
 
         def track_rollout() -> CandidateResult:
             # For the engage/resume decision, static hazards (land, world
@@ -146,8 +155,8 @@ class PredictiveAvoider:
             steer = track_steerer() if track_steerer else None
             result = self._rollout(vessel_state, obstacles,
                                    target_heading=track_heading,
-                                   steer_fn=steer, oob_grace=20.0,
-                                   land_grace=20.0)
+                                   steer_fn=steer, oob_grace=self.maneuver_time,
+                                   land_grace=self.maneuver_time)
             result.label = "track"
             return result
 

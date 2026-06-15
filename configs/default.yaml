@@ -1,6 +1,6 @@
 simulation:
   dt: 0.1
-  max_duration: 600.0
+  max_duration: 1200.0
   goal_tolerance: 5.0
   collision_radius: 2.0
   terminate_on_collision: true
@@ -10,11 +10,13 @@ world:
   height: 100
   cell_size: 10.0
 vessel:
+  # ~30 m small craft to scale (cell_size = 10 m): cruise 5 m/s (~9.7 kn),
+  # K=0.12 => ~4.2 deg/s steady yaw, turn radius ~6.8 cells (~68 m).
   model: fossen3
-  cruise_speed: 2.5
-  max_speed: 4.0
-  nomoto_K: 0.4
-  nomoto_T: 4.0
+  cruise_speed: 0.5
+  max_speed: 0.8
+  nomoto_K: 0.12
+  nomoto_T: 3.0
   max_rudder_deg: 35.0
   rudder_rate_deg: 6.363636363636363
   sway_time_constant: 2.0
@@ -32,15 +34,16 @@ control:
   heading_kd: 1.5
   slowdown_start_deg: 15.0
   slowdown_full_deg: 60.0
-  min_speed_factor: 0.3
+  min_speed_factor: 1.0          # 1.0 = course-only (no speed reduction in turns)
 planner:
   safety_margin: 7
   max_segment_length: 15.0
 follower:
   type: ilos
-  lookahead: 18.0
+  lookahead: 10.0
   path_tolerance: 4.0
   integral_gain: 0.5
+  turn_radius: 7.0               # wheel-over turn anticipation (cells); 0 disables
 avoidance:
   implementation: predictive
   safe_distance: 10.0

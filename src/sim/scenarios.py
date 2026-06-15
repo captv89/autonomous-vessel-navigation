@@ -109,7 +109,7 @@ def head_on(seed: Optional[int] = None) -> Scenario:
         description="COLREGs Rule 14: reciprocal-course vessel dead ahead. "
                     "Both should pass port-to-port (own ship turns starboard).",
         start=(10, 50), start_heading_deg=0, goal=(90, 50),
-        traffic=[TrafficSpec(x=90, y=50, heading_deg=180, speed=2.0)],
+        traffic=[TrafficSpec(x=90, y=50, heading_deg=180, speed=0.45)],
         seed=seed)
 
 
@@ -119,7 +119,7 @@ def crossing_starboard(seed: Optional[int] = None) -> Scenario:
         description="COLREGs Rule 15: traffic crossing from starboard; "
                     "own ship is give-way and should pass astern.",
         start=(10, 50), start_heading_deg=0, goal=(90, 50),
-        traffic=[TrafficSpec(x=55, y=10, heading_deg=90, speed=2.0)],
+        traffic=[TrafficSpec(x=55, y=10, heading_deg=90, speed=0.45)],
         seed=seed)
 
 
@@ -129,7 +129,7 @@ def crossing_port(seed: Optional[int] = None) -> Scenario:
         description="Traffic crossing from port; own ship is stand-on but "
                     "must still act if the other vessel does not.",
         start=(10, 50), start_heading_deg=0, goal=(90, 50),
-        traffic=[TrafficSpec(x=55, y=90, heading_deg=-90, speed=2.0)],
+        traffic=[TrafficSpec(x=55, y=90, heading_deg=-90, speed=0.45)],
         seed=seed)
 
 
@@ -138,7 +138,7 @@ def overtaking(seed: Optional[int] = None) -> Scenario:
         name="overtaking",
         description="COLREGs Rule 13: slow vessel ahead on the same course.",
         start=(10, 50), start_heading_deg=0, goal=(90, 50),
-        traffic=[TrafficSpec(x=30, y=50, heading_deg=0, speed=1.0)],
+        traffic=[TrafficSpec(x=30, y=50, heading_deg=0, speed=0.25)],
         seed=seed)
 
 
@@ -151,8 +151,8 @@ def coastal(seed: Optional[int] = None) -> Scenario:
         rect_obstacles=[(25, 0, 14, 45), (55, 55, 16, 45), (40, 75, 10, 10)],
         circle_obstacles=[(75, 30, 8), (20, 70, 6)],
         traffic=[
-            TrafficSpec(x=85, y=60, heading_deg=-130, speed=1.5),
-            TrafficSpec(x=45, y=35, heading_deg=60, speed=1.2,
+            TrafficSpec(x=85, y=60, heading_deg=-130, speed=0.4),
+            TrafficSpec(x=45, y=35, heading_deg=60, speed=0.3,
                         behavior="waypoint",
                         waypoints=[(50, 50), (45, 65), (30, 55), (45, 35)]),
         ],
@@ -222,7 +222,7 @@ def coastal_random(seed: Optional[int] = None) -> Scenario:
                 traffic.append(TrafficSpec(
                     x=float(tx), y=float(ty),
                     heading_deg=float(rng.uniform(-180, 180)),
-                    speed=float(rng.uniform(1.0, 2.0))))
+                    speed=float(rng.uniform(0.2, 0.45))))
                 break
 
     return Scenario(
@@ -267,7 +267,7 @@ def random_scenario(seed: Optional[int] = None) -> Scenario:
         traffic.append(TrafficSpec(
             x=float(x), y=float(y),
             heading_deg=float(rng.uniform(-180, 180)),
-            speed=float(rng.uniform(1.0, 2.2))))
+            speed=float(rng.uniform(0.2, 0.45))))
 
     return Scenario(
         name="random",
@@ -284,9 +284,9 @@ def multi_vessel(seed: Optional[int] = None) -> Scenario:
                     "overlap. Tests rule interplay under multi-ship load.",
         start=(10, 50), start_heading_deg=0, goal=(90, 50),
         traffic=[
-            TrafficSpec(x=90, y=50, heading_deg=180, speed=2.0),
-            TrafficSpec(x=52, y=14, heading_deg=90, speed=2.0),
-            TrafficSpec(x=70, y=78, heading_deg=-115, speed=1.5),
+            TrafficSpec(x=90, y=50, heading_deg=180, speed=0.45),
+            TrafficSpec(x=52, y=14, heading_deg=90, speed=0.45),
+            TrafficSpec(x=70, y=78, heading_deg=-115, speed=0.35),
         ],
         seed=seed)
 
@@ -300,7 +300,7 @@ def narrow_channel(seed: Optional[int] = None) -> Scenario:
                     "flavor).",
         start=(8, 50), start_heading_deg=0, goal=(92, 50),
         rect_obstacles=[(0, 0, 100, 36), (0, 64, 100, 36)],
-        traffic=[TrafficSpec(x=90, y=53, heading_deg=180, speed=1.5)],
+        traffic=[TrafficSpec(x=90, y=53, heading_deg=180, speed=0.4)],
         seed=seed)
 
 
@@ -315,7 +315,7 @@ def random_encounter(seed: Optional[int] = None) -> Scenario:
     """
     rng = np.random.default_rng(seed)
     start, goal = (12.0, 50.0), (88.0, 50.0)
-    own_speed = 2.5                     # nominal cruise (config default)
+    own_speed = 0.5                     # nominal cruise (config default)
 
     # Meeting point ahead on the own-ship track
     meet_x = rng.uniform(40.0, 65.0)
@@ -325,7 +325,7 @@ def random_encounter(seed: Optional[int] = None) -> Scenario:
     angle = rng.choice([180.0, -90.0, 90.0,
                         rng.uniform(120, 180), rng.uniform(-150, -60),
                         rng.uniform(60, 150), 15.0])
-    speed = (1.0 if abs(angle) < 30 else float(rng.uniform(1.5, 2.5)))
+    speed = (0.25 if abs(angle) < 30 else float(rng.uniform(0.35, 0.55)))
     # Traffic course such that the drawn angle is the relative encounter
     # angle (180 = reciprocal/head-on, -90 = crossing from starboard).
     heading = np.radians(angle + 180.0)
@@ -342,7 +342,7 @@ def random_encounter(seed: Optional[int] = None) -> Scenario:
         traffic.append(TrafficSpec(
             x=float(wx), y=float(wy),
             heading_deg=float(rng.uniform(-180, 180)),
-            speed=float(rng.uniform(1.0, 2.0))))
+            speed=float(rng.uniform(0.2, 0.4))))
 
     return Scenario(
         name="random_encounter",

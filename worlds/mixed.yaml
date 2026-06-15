@@ -15,8 +15,8 @@ circle_obstacles:
   - [22, 68, 6]
 
 traffic:
-  - {x: 85, y: 60, heading_deg: -130, speed: 1.5}
-  - {x: 45, y: 35, heading_deg: 60, speed: 1.2, behavior: waypoint,
+  - {x: 85, y: 60, heading_deg: -130, speed: 0.4}
+  - {x: 45, y: 35, heading_deg: 60, speed: 0.3, behavior: waypoint,
      waypoints: [[50, 50], [45, 65], [30, 55], [45, 35]]}
 seed: null
 

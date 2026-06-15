@@ -102,21 +102,26 @@ class LOSController:
         Delta: Lookahead distance
     """
     
-    def __init__(self, lookahead_distance: float = 8.0, 
+    def __init__(self, lookahead_distance: float = 8.0,
                  path_tolerance: float = 4.0,
-                 integral_gain: float = 0.5):
+                 integral_gain: float = 0.5,
+                 turn_radius: float = 0.0):
         """
         Args:
-            lookahead_distance (Delta): Determines convergence rate. 
+            lookahead_distance (Delta): Determines convergence rate.
                                       Too small = Oscillations. Too large = Corner cutting.
                                       Rec: 1.5-2.5x Vessel Length.
             path_tolerance: Radius of acceptance to switch to next waypoint.
             integral_gain: How aggressively to correct drift (0.0 = Standard LOS).
+            turn_radius: Wheel-over turn anticipation radius (cells). The switch
+                         to the next leg is brought forward by R*tan(dPsi/2) so
+                         the ship turns in advance. 0 disables (switch at wp).
         """
         self.Delta = lookahead_distance
         self.radius = path_tolerance
         self.sigma = 0.0  # Integral accumulator
         self.gamma = integral_gain
+        self.turn_radius = turn_radius
         self.current_wp_idx = 0 # Index of the "To" waypoint
         
     def reset(self):
@@ -155,7 +160,22 @@ class LOSController:
             along_track = 0.0
         passed_segment_end = along_track >= seg_len
 
-        if dist_to_goal < self.radius or passed_segment_end:
+        # Wheel-over: begin the alteration in advance of the corner so the turn
+        # circle is tangent to both legs (how bridge teams / track controllers
+        # steer). Switch distance grows with the upcoming course change.
+        switch_dist = self.radius
+        nxt = self.current_wp_idx + 1
+        if self.turn_radius > 0.0 and nxt < len(waypoints):
+            a_x, a_y = goal_wp[0] - prev_wp[0], goal_wp[1] - prev_wp[1]
+            b_x, b_y = waypoints[nxt][0] - goal_wp[0], waypoints[nxt][1] - goal_wp[1]
+            if np.hypot(a_x, a_y) > 1e-6 and np.hypot(b_x, b_y) > 1e-6:
+                d_psi = abs(PathUtils.normalize_angle(
+                    np.arctan2(b_y, b_x) - np.arctan2(a_y, a_x)))
+                wheel_over = self.turn_radius * np.tan(min(d_psi, np.radians(170)) / 2.0)
+                # Don't begin the turn before the segment's midpoint.
+                switch_dist = max(self.radius, min(wheel_over, 0.6 * seg_len))
+
+        if dist_to_goal < switch_dist or passed_segment_end:
             if self.current_wp_idx < len(waypoints) - 1:
                 self.current_wp_idx += 1
                 self.sigma = 0.0  # Reset integral on waypoint switch
