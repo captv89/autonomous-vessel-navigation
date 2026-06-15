@@ -100,16 +100,39 @@ uv run python main.py scenarios           # list scenarios
 uv run python main.py simulate --agent classical --scenario head_on --render
 uv run python main.py replay logs/classical_head_on_0.jsonl
 
+# Any agent can be simulated/evaluated:
+#   classical | classical-legacy | mpc | rl | rl-shielded  (rl/rl-shielded need --model)
+uv run python main.py simulate --agent mpc --scenario head_on --render
+uv run python main.py simulate --agent rl-shielded --model models/ppo_vessel --scenario head_on --render
+
+# --scenario also takes a path to a world YAML (see worlds/):
+uv run python main.py simulate --agent classical --scenario worlds/static_only.yaml --render
+
 # RL: train, then watch / evaluate
 uv run python main.py train --timesteps 500000
 uv run python main.py simulate --agent rl --model models/ppo_vessel --scenario crossing_starboard --render
 
 # Full comparison report (markdown + figures + per-episode logs)
-uv run python main.py evaluate --model models/ppo_vessel --episodes 10
+uv run python main.py evaluate --agents classical,mpc,rl --model models/ppo_vessel --episodes 10
 ```
 
 `--render` opens the pygame viewer (live); `replay` opens any recorded
 episode with pause/step/speed controls and a decision-inspector panel.
+
+### Worlds: define a scenario in a file
+
+A world file is a self-contained YAML scenario — own-ship start/goal, static
+obstacles, dynamic traffic, and optional `world`/`environment` overrides (e.g. a
+sea current). It runs anywhere a registry scenario name does, without code
+changes. Three examples ship in `worlds/`: `static_only` (landmasses, no
+traffic), `dynamic_only` (open-water traffic), and `mixed` (both, plus a
+current). To benchmark agents across worlds, point the runner at the example
+suite (the frozen `benchmarks/v1.yaml` is never edited):
+
+```bash
+uv run python main.py benchmark --suite benchmarks/worlds.yaml \
+    --agent classical --agent mpc
+```
 
 ## Scenarios and the COLREGs rules they test
 
@@ -129,6 +152,10 @@ episode with pause/step/speed controls and a decision-inspector panel.
 Benchmark conditions: **calm** (no disturbances) and **disturbed**
 (scenario-seeded random current up to 0.3 cells/s + wind gusts) — every
 agent faces the identical seeded episodes.
+
+Beyond these named scenarios, you can author your own world as a YAML file and
+run it anywhere a scenario name is accepted — see [Worlds](#worlds-define-a-scenario-in-a-file)
+above and the examples in `worlds/`.
 
 ## The agents, in plain language
 
@@ -175,6 +202,9 @@ main.py                 CLI: scenarios / simulate / train / evaluate /
                         benchmark / replay
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
 benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
+benchmarks/worlds.yaml  example suite over the file-defined worlds in worlds/
+worlds/                 file-defined worlds (YAML scenarios): static_only,
+                        dynamic_only, mixed
 docs/SUBMITTING.md      how to score your own model on the benchmark
 docs/SIMULATOR.md       what the simulator models, gap analysis vs the
                         literature, and open review questions for mariners

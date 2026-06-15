@@ -1,0 +1,32 @@
+# Example suite: benchmark agents across the file-defined worlds in worlds/.
+#
+# This is NOT the frozen exam (see benchmarks/v1.yaml — never edit that one).
+# It demonstrates running any set of agents over custom world files:
+#
+#   uv run python main.py benchmark --suite benchmarks/worlds.yaml \
+#       --agent classical --agent mpc
+#
+# Agents are passed on the CLI. Disturbances come from `conditions` below
+# (a world file's own environment overrides are not applied by the benchmark
+# runner — it consumes each world's geometry and traffic only).
+name: vesselnav-worlds
+version: 1
+description: >
+  Example benchmark over the demo world files (static-only, dynamic-only,
+  and combined) in calm and disturbed conditions.
+
+episodes_per_scenario: 10
+base_seed: 1000
+
+scenarios:
+  - worlds/static_only.yaml
+  - worlds/dynamic_only.yaml
+  - worlds/mixed.yaml
+
+conditions:
+  calm: {}
+  disturbed:
+    environment:
+      randomize: true
+      max_random_current: 0.3
+      wind_gust_accel: 0.03

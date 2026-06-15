@@ -9,6 +9,7 @@ random generator for training and large evaluation suites.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -43,6 +44,33 @@ class Scenario:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Scenario":
+        """Rebuild a Scenario from its serialized form (inverse of to_dict).
+
+        Only Scenario fields are read; any other keys (e.g. world/environment
+        config overrides in a world file) are ignored here.
+        """
+        def _tuples(items):
+            return [tuple(item) for item in (items or [])]
+
+        traffic = [TrafficSpec(
+            x=float(t["x"]), y=float(t["y"]),
+            heading_deg=float(t["heading_deg"]), speed=float(t["speed"]),
+            behavior=t.get("behavior", "straight"),
+            waypoints=_tuples(t.get("waypoints")) or None)
+            for t in data.get("traffic", [])]
+        return cls(
+            name=data.get("name", "world"),
+            start=tuple(data["start"]),
+            start_heading_deg=float(data["start_heading_deg"]),
+            goal=tuple(data["goal"]),
+            rect_obstacles=_tuples(data.get("rect_obstacles")),
+            circle_obstacles=_tuples(data.get("circle_obstacles")),
+            traffic=traffic,
+            seed=data.get("seed"),
+            description=data.get("description", ""))
 
     def make_world(self, config: Config) -> GridWorld:
         world = GridWorld(config.world.width, config.world.height,
@@ -338,7 +366,41 @@ SCENARIOS = {
 }
 
 
+# Config sections a world file may override (mirrors Config's sections).
+_CONFIG_SECTIONS = ("simulation", "world", "vessel", "environment", "control",
+                    "planner", "follower", "avoidance", "rl", "training")
+
+
+def _is_world_file(name: str) -> bool:
+    return (name.endswith((".yaml", ".yml")) or os.sep in name
+            or os.path.exists(name))
+
+
+def load_world_file(path: str) -> Tuple[Scenario, Dict[str, Any]]:
+    """Load a self-contained world file.
+
+    Returns the Scenario (geometry + traffic) and a dict of config section
+    overrides (e.g. {"environment": {...}}) present in the file. The caller
+    decides whether/how to apply the overrides.
+    """
+    import yaml
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    overrides = {k: data[k] for k in _CONFIG_SECTIONS if k in data}
+    return Scenario.from_dict(data), overrides
+
+
 def build_scenario(name: str, seed: Optional[int] = None) -> Scenario:
+    """Resolve a scenario name (registry) or a world-file path to a Scenario.
+
+    A passed `seed` overrides whatever the world file declares; world-file
+    config overrides are dropped here (use load_world_file to apply them).
+    """
+    if _is_world_file(name):
+        scenario, _ = load_world_file(name)
+        if seed is not None:
+            scenario.seed = seed
+        return scenario
     if name not in SCENARIOS:
         raise KeyError(f"Unknown scenario '{name}'. "
                        f"Available: {', '.join(sorted(SCENARIOS))}")
