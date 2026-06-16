@@ -157,6 +157,16 @@ Beyond these named scenarios, you can author your own world as a YAML file and
 run it anywhere a scenario name is accepted — see [Worlds](#worlds-define-a-scenario-in-a-file)
 above and the examples in `worlds/`.
 
+**Imazu problem.** The 22 canonical Imazu encounter geometries (Sawada et al.
+2021) are available as `imazu_01`…`imazu_22` and as a diagnostic suite, for
+cross-referencing the COLREGs / deep-RL literature — see [docs/IMAZU.md](docs/IMAZU.md).
+This is part of the benchmark-v2 roadmap, separate from the frozen v1 exam.
+
+```bash
+uv run python main.py simulate --agent classical --scenario imazu_13 --render
+uv run python main.py benchmark --suite benchmarks/imazu.yaml --agent classical --agent mpc
+```
+
 ## The agents, in plain language
 
 Every agent answers the same question each step — *"given what I can see,

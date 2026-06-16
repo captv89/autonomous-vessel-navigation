@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, asdict
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -351,6 +352,83 @@ def random_encounter(seed: Optional[int] = None) -> Scenario:
         traffic=traffic, seed=seed)
 
 
+# --------------------------------------------------------------------------
+# Imazu problem (Sawada et al. 2021, "Automatic ship collision avoidance
+# using deep reinforcement learning with LSTM in continuous action spaces",
+# J. Mar. Sci. Technol., Table 4; geometries originally due to Imazu 1987).
+#
+# The canonical 22-case exam used across the COLREGs / DRL collision-
+# avoidance literature. In the paper the own ship starts at (X, Y) =
+# (-6.0, 0.0) NM heading psi = 0 deg toward a waypoint at (6.0, 0.0); every
+# target ship holds a straight collision course to the origin, with its
+# speed set so all ships reach the origin together (TCPA 30 min).
+#
+# Each entry below is a list of (X_NM, Y_NM, psi_deg) target ships,
+# transcribed verbatim from Table 4. Cases 1-4 have one target, 5-12 two,
+# 13-22 three. See docs/IMAZU.md for the case-by-case mapping.
+IMAZU_CASES: Dict[int, List[Tuple[float, float, float]]] = {
+    1:  [(6.000, 0.000, 180.0)],
+    2:  [(0.000, 6.000, -90.0)],
+    3:  [(-4.200, 0.000, 0.0)],
+    4:  [(-4.243, -4.243, 45.0)],
+    5:  [(6.000, 0.000, 180.0), (0.000, 6.000, -90.0)],
+    6:  [(-5.909, 1.042, -10.0), (-4.243, 4.243, -45.0)],
+    7:  [(-4.200, 0.000, 0.0), (-4.243, 4.243, -45.0)],
+    8:  [(6.000, 0.000, 180.0), (0.000, 6.000, -90.0)],
+    9:  [(-5.196, 3.000, -30.0), (0.000, 6.000, -90.0)],
+    10: [(0.000, 6.000, -90.0), (-5.796, -1.553, 15.0)],
+    11: [(0.000, -6.000, 90.0), (-5.196, 3.000, -30.0)],
+    12: [(-4.243, 4.243, -45.0), (-5.909, 1.042, -10.0)],
+    13: [(6.000, 0.000, 180.0), (-5.909, -1.042, 10.0), (-4.243, -4.243, 45.0)],
+    14: [(-5.909, 1.042, -10.0), (-4.243, 4.243, -45.0), (0.000, 6.000, -90.0)],
+    15: [(-4.200, 0.000, 0.0), (-4.243, 4.243, -45.0), (0.000, 6.000, -90.0)],
+    16: [(-2.970, -2.970, 45.0), (0.000, -6.000, 90.0), (0.000, 6.000, -90.0)],
+    17: [(-4.200, 0.000, 0.0), (-5.909, -1.042, 10.0), (-4.243, 4.243, -45.0)],
+    18: [(4.243, 4.243, -135.0), (-5.796, 1.553, -15.0), (-5.196, 3.000, -30.0)],
+    19: [(-5.796, -1.553, 15.0), (-5.796, 1.553, -15.0), (4.243, 4.243, -135.0)],
+    20: [(-4.200, 0.000, 0.0), (-5.796, 1.553, -15.0), (0.000, 6.000, -90.0)],
+    21: [(-5.796, 1.553, -15.0), (-5.796, -1.553, 15.0), (0.000, 6.000, -90.0)],
+    22: [(-4.200, 0.000, 0.0), (-4.243, 4.243, -45.0), (0.000, 6.000, -90.0)],
+}
+
+# Affine map from Sawada's NM frame to our 100x100 cell world: the frame is
+# identical in handedness and heading convention (0 deg = +x, CCW), so only
+# a translate+scale is needed. (-6, 0) NM -> (10, 50) cells and (6, 0) NM ->
+# (90, 50) cells, matching the existing head_on geometry.
+_IMAZU_RANGE_NM = 6.0
+_IMAZU_SCALE = 40.0 / _IMAZU_RANGE_NM            # cells per NM
+_IMAZU_CENTER = 50.0                             # encounter point, cells
+_IMAZU_REF_SPEED = 0.5                           # own-ship cruise (cells/s)
+
+
+def imazu(case: int, seed: Optional[int] = None) -> Scenario:
+    """Build Imazu problem case `case` (1..22) on the VesselNav scale.
+
+    Own ship runs across the world (10, 50) -> (90, 50); each target ship is
+    placed on a straight collision course to the centre, its speed scaled by
+    range so all ships would meet there together (faithful to the paper's
+    simultaneous-arrival construction).
+    """
+    if case not in IMAZU_CASES:
+        raise KeyError(f"Imazu case {case} out of range 1..22")
+    targets = IMAZU_CASES[case]
+    traffic = [TrafficSpec(
+        x=_IMAZU_CENTER + _IMAZU_SCALE * x_nm,
+        y=_IMAZU_CENTER + _IMAZU_SCALE * y_nm,
+        heading_deg=psi_deg,
+        speed=round(_IMAZU_REF_SPEED * float(np.hypot(x_nm, y_nm))
+                    / _IMAZU_RANGE_NM, 3))
+        for (x_nm, y_nm, psi_deg) in targets]
+    n = len(targets)
+    return Scenario(
+        name=f"imazu_{case:02d}",
+        description=f"Imazu problem case {case} (Sawada et al. 2021): "
+                    f"{n} target ship{'s' if n != 1 else ''} on a collision "
+                    f"course to the encounter point.",
+        start=(10.0, 50.0), start_heading_deg=0.0, goal=(90.0, 50.0),
+        traffic=traffic, seed=seed)
+
+
 SCENARIOS = {
     "open_water": open_water,
     "head_on": head_on,
@@ -364,6 +442,10 @@ SCENARIOS = {
     "random": random_scenario,
     "random_encounter": random_encounter,
 }
+
+# Imazu problem cases register as imazu_01 .. imazu_22.
+for _case in range(1, 23):
+    SCENARIOS[f"imazu_{_case:02d}"] = partial(imazu, _case)
 
 
 # Config sections a world file may override (mirrors Config's sections).
