@@ -119,6 +119,31 @@ uv run python main.py evaluate --agents classical,mpc,rl --model models/ppo_vess
 `--render` opens the pygame viewer (live); `replay` opens any recorded
 episode with pause/step/speed controls and a decision-inspector panel.
 
+### Side-by-side comparison animations
+
+`scripts/make_comparison_animation.py` renders two episode logs (same scenario
+and seed, different agents) into a single side-by-side MP4 — handy for blog
+posts and talks. It is a standalone matplotlib script (no pygame/torch/SB3), so
+it runs headless. First record the two episodes, then render:
+
+```bash
+uv run python main.py simulate --agent classical --scenario coastal --seed 1000 \
+    --log logs/classical_coastal_seed1000.jsonl
+uv run python main.py simulate --agent rl --model models/ppo_vessel --scenario coastal --seed 1000 \
+    --log logs/rl_coastal_seed1000.jsonl
+
+uv run python scripts/make_comparison_animation.py \
+    --left logs/classical_coastal_seed1000.jsonl \
+    --right logs/rl_coastal_seed1000.jsonl \
+    --scenario coastal --seed 1000 \
+    --out animations/classical_vs_rl_coastal.mp4
+```
+
+Land, planned route (classical only), traffic, wake trails and an end-of-episode
+outcome banner are drawn from the JSONL log alone. `--speed` compresses playback
+(default 8×, since the sim runs at dt=0.1 s) and the script falls back to PNG
+frames if `ffmpeg` is unavailable.
+
 ### Worlds: define a scenario in a file
 
 A world file is a self-contained YAML scenario — own-ship start/goal, static
