@@ -24,6 +24,7 @@ from src.config import Config
 from src.environment.grid_world import GridWorld
 from src.environment.dynamic_obstacles import DynamicObstacleManager
 from src.vessel.dynamics import make_vessel
+from src.sim.reactive_traffic import steer_reactive_traffic
 from src.sim.scenarios import Scenario
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,7 @@ class SimulationEngine:
         # Falls back to heading when nearly stationary (course undefined).
         psi = self.vessel.get_heading()
         u = self.vessel.get_speed()
+        own_x, own_y = self.vessel.get_position()
         sway = getattr(self.vessel, "get_sway", lambda: 0.0)()
         vx = u * np.cos(psi) - sway * np.sin(psi) + self.current[0]
         vy = u * np.sin(psi) + sway * np.cos(psi) + self.current[1]
@@ -165,6 +167,12 @@ class SimulationEngine:
 
         self.vessel.update(dt, rudder_command=rudder_command,
                            desired_speed=desired_speed)
+        # Reactive (give-way) targets steer off the pre-step world snapshot
+        # before they integrate; non-reactive traffic is untouched.
+        steer_reactive_traffic(
+            self.traffic,
+            {"id": -1, "x": own_x, "y": own_y, "heading": psi, "speed": u},
+            cfg, dt)
         self.traffic.update_all(dt)
         # Traffic drifts with the same water current as the own ship.
         if self.current != (0.0, 0.0):

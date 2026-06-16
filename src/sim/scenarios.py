@@ -29,6 +29,10 @@ class TrafficSpec:
     speed: float
     behavior: str = "straight"                # 'straight' | 'waypoint' | 'circular'
     waypoints: Optional[List[Tuple[float, float]]] = None
+    # COLREGs reactivity (gap G1): 'none'/'rogue' never give way (default,
+    # the historical behaviour); 'compliant'/'partial' take starboard
+    # avoiding action when give-way. See src/sim/reactive_traffic.py.
+    compliance: str = "none"
 
 
 @dataclass
@@ -60,7 +64,8 @@ class Scenario:
             x=float(t["x"]), y=float(t["y"]),
             heading_deg=float(t["heading_deg"]), speed=float(t["speed"]),
             behavior=t.get("behavior", "straight"),
-            waypoints=_tuples(t.get("waypoints")) or None)
+            waypoints=_tuples(t.get("waypoints")) or None,
+            compliance=t.get("compliance", "none"))
             for t in data.get("traffic", [])]
         return cls(
             name=data.get("name", "world"),
@@ -83,11 +88,16 @@ class Scenario:
         return world
 
     def make_traffic(self) -> DynamicObstacleManager:
+        from src.sim.reactive_traffic import VALID_COMPLIANCE
         manager = DynamicObstacleManager()
         for spec in self.traffic:
+            if spec.compliance not in VALID_COMPLIANCE:
+                raise ValueError(
+                    f"unknown traffic compliance {spec.compliance!r}; "
+                    f"expected one of {sorted(VALID_COMPLIANCE)}")
             vessel = manager.add_obstacle(
                 spec.x, spec.y, np.radians(spec.heading_deg), spec.speed,
-                behavior=spec.behavior)
+                behavior=spec.behavior, compliance=spec.compliance)
             if spec.behavior == "waypoint" and spec.waypoints:
                 vessel.set_waypoints(list(spec.waypoints))
         return manager

@@ -153,6 +153,14 @@ Benchmark conditions: **calm** (no disturbances) and **disturbed**
 (scenario-seeded random current up to 0.3 cells/s + wind gusts) — every
 agent faces the identical seeded episodes.
 
+**Reactive traffic (COLREGs give-way).** Traffic vessels default to holding
+their course, but each can be given a `compliance` level — `compliant` or
+`partial` makes a target take its own starboard give-way action when it is
+the give-way vessel, so stand-on situations are tested against a target that
+actually acts (`none`/`rogue` keep the default non-reactive behaviour). Set
+it per vessel in a scenario or world file. This is part of the benchmark-v2
+roadmap, separate from the frozen v1 exam.
+
 Beyond these named scenarios, you can author your own world as a YAML file and
 run it anywhere a scenario name is accepted — see [Worlds](#worlds-define-a-scenario-in-a-file)
 above and the examples in `worlds/`.

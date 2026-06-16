@@ -52,13 +52,13 @@ class MovingVessel:
     - Random walk
     """
     
-    def __init__(self, obstacle_id: int, x: float, y: float, 
+    def __init__(self, obstacle_id: int, x: float, y: float,
                  heading: float, speed: float,
                  length: float = 3.0, width: float = 1.5,
-                 behavior: str = 'straight'):
+                 behavior: str = 'straight', compliance: str = 'none'):
         """
         Initialize moving vessel.
-        
+
         Args:
             obstacle_id: Unique ID
             x: Initial X position
@@ -68,6 +68,8 @@ class MovingVessel:
             length: Vessel length
             width: Vessel width
             behavior: Movement behavior ('straight', 'waypoint', 'circular')
+            compliance: COLREGs reactivity ('none'/'rogue' = never give way;
+                'compliant'/'partial' = take starboard avoiding action)
         """
         self.obstacle = DynamicObstacle(
             id=obstacle_id,
@@ -80,6 +82,11 @@ class MovingVessel:
         self.behavior = behavior
         self.waypoints = []
         self.current_waypoint_idx = 0
+
+        # Reactive-traffic state (gap G1); driven by src/sim/reactive_traffic.
+        self.compliance = compliance
+        self.nominal_heading = heading       # course resumed once clear
+        self.giveway_engaged = False
         
         # For circular behavior
         self.circle_center = None
@@ -241,9 +248,10 @@ class DynamicObstacleManager:
         self.obstacles: List[MovingVessel] = []
         self.next_id = 0
     
-    def add_obstacle(self, x: float, y: float, heading: float, 
+    def add_obstacle(self, x: float, y: float, heading: float,
                     speed: float, behavior: str = 'straight',
-                    length: float = 3.0, width: float = 1.5) -> MovingVessel:
+                    length: float = 3.0, width: float = 1.5,
+                    compliance: str = 'none') -> MovingVessel:
         """
         Add a dynamic obstacle.
         
@@ -266,7 +274,8 @@ class DynamicObstacleManager:
             speed=speed,
             length=length,
             width=width,
-            behavior=behavior
+            behavior=behavior,
+            compliance=compliance
         )
         self.obstacles.append(vessel)
         self.next_id += 1

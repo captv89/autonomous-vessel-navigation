@@ -26,9 +26,12 @@ episode, `environment.*`) that carries the own ship *and* all traffic, plus
 random wind-gust forces. No waves, no shallow-water effects, no tide.
 
 **Other ships.** Traffic vessels follow fixed behaviors — straight line,
-waypoint circuit, or circle — and drift with the same current. They do
-**not** react to you: they are stand-on vessels that never give way (see
-gap G1).
+waypoint circuit, or circle — and drift with the same current. By default
+they do **not** react to you: they are stand-on vessels that never give way.
+A target can optionally be made *reactive* (`compliance: compliant | partial`),
+in which case it takes its own starboard give-way action when it is the
+give-way vessel — a benchmark-v2 capability (gap G1) kept off in the frozen
+v1 exam.
 
 **The chart.** A grid: each cell is water or land. Land is land — there is
 no depth, no draft, no under-keel clearance (gap G7). Leaving the mapped
@@ -61,7 +64,7 @@ codebase.
 
 | # | Feature | Common in literature | Ours today | Impact | Effort |
 |---|---------|---------------------|------------|--------|--------|
-| G1 | **Reactive / rule-compliant traffic** (target ships that give way, or behave imperfectly) | Mixed; strong papers test against both compliant and rogue targets | Constant-behavior traffic only | **High** — stand-on scenarios (Rule 17) are only half-tested when the other ship never acts; multi-ship realism limited | Medium — a traffic behavior layer can reuse the classical avoider |
+| G1 | **Reactive / rule-compliant traffic** (target ships that give way, or behave imperfectly) | Mixed; strong papers test against both compliant and rogue targets | ✅ Addressed for v2: per-vessel `compliance` (none/rogue, compliant, partial) — give-way targets take starboard action (`src/sim/reactive_traffic.py`); off in frozen v1 | **High** — stand-on scenarios (Rule 17) are only half-tested when the other ship never acts; multi-ship realism limited | Medium — a traffic behavior layer can reuse the classical avoider |
 | G2 | **Imazu problem set** (22 canonical 1-4-ship encounter geometries used across Japanese/Korean COLREGs-DRL papers) | Frequent as a standard exam | Our own 9 scenarios | **High** for comparability — citing Imazu results lets readers cross-reference decades of literature | Low — pure scenario definitions |
 | G3 | **Sensor realism** (position/course noise, AIS update intervals, radar dropouts, partial observability) | Common in sim2real-oriented work; Gaussian-noise digital twins | Perfect ground-truth observation | **High** for any robustness/sim2real claim; Medium for pure algorithm comparison | Medium — noise + latency model in one place (the `Observation` builder), benchmark as a third condition |
 | G4 | **Ship domain** (asymmetric safety zone — more clearance ahead than astern, e.g. Fujii/Goodwin) | Standard in compliance evaluation papers | Circular safe distance | Medium — affects who "passed too close"; mariners think in domains, not circles | Low-Medium — swap the distance test in scoring + avoidance |
