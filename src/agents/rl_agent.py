@@ -21,18 +21,36 @@ from src.sim.engine import Observation
 from src.rl.observation import ObservationBuilder
 
 
+# Loading a PPO policy off disk dominates the cost of constructing an RLAgent.
+# Benchmarks build a fresh agent per episode (to guarantee identical, stateless
+# starts), so without caching the same .zip is re-read hundreds of times. The
+# loaded model is used read-only for deterministic prediction, so it is safe to
+# share across agent instances within a process. Each process keeps its own
+# cache, so parallel benchmark workers stay isolated.
+_MODEL_CACHE: Dict[tuple, Any] = {}
+
+
+def _load_model(model_path: str, device: str = "cpu"):
+    key = (str(model_path), device)
+    model = _MODEL_CACHE.get(key)
+    if model is None:
+        from stable_baselines3 import PPO
+        model = PPO.load(model_path, device=device)
+        _MODEL_CACHE[key] = model
+    return model
+
+
 class RLAgent(Agent):
     name = "rl_ppo"
 
     def __init__(self, config: Config, model_path: str,
                  deterministic: bool = True):
         import torch  # local import: keep torch out of classical-only runs
-        from stable_baselines3 import PPO
 
         self.config = config
         self.model_path = model_path
         self.deterministic = deterministic
-        self.model = PPO.load(model_path, device="cpu")
+        self.model = _load_model(model_path, device="cpu")
         self.builder = ObservationBuilder(config)
         self.heading_actions = [np.radians(a)
                                 for a in config.rl.heading_actions_deg]

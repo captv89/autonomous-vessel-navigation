@@ -24,13 +24,16 @@ Fairness and reproducibility guarantees:
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import importlib
 import json
 import logging
+from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 
 import yaml
 
@@ -111,9 +114,77 @@ def apply_condition(base: Config, override: Dict[str, Any]) -> Config:
 
 # ----------------------------------------------------------------- running
 
+def _display_keys(agent_specs: List[str],
+                  base_names: Dict[str, str]) -> Dict[str, str]:
+    """Map each spec to a unique results key.
+
+    Agents name themselves by class (e.g. every `rl:<path>` reports
+    `rl_ppo`), so running two models behind one class would collide and the
+    later result would silently overwrite the earlier. When a base name is
+    used by more than one spec, disambiguate it with the model file name:
+    `rl_ppo[ppo_10m]` vs `rl_ppo[ppo_vessel]`. Single-model runs are
+    unchanged, so existing reports and the paper pipeline keep their names.
+    """
+    counts = Counter(base_names.values())
+    keys: Dict[str, str] = {}
+    for spec in agent_specs:
+        name = base_names[spec]
+        if counts[name] > 1 and ":" in spec:
+            keys[spec] = f"{name}[{Path(spec.split(':', 1)[1]).name}]"
+        else:
+            keys[spec] = name
+    return keys
+
+
+def _run_agent_condition(
+        spec: str, cond_name: str, override: Dict[str, Any], *,
+        display_key: str, base_cfg_dict: Dict[str, Any],
+        scenarios: List[str], episodes_per_scenario: int, base_seed: int,
+        log_root: str, keep_logs: bool) -> Tuple[str, str, Dict[str, Any]]:
+    """Run one agent over one condition (all scenarios x seeds).
+
+    The unit of parallel work. A fresh agent is built per episode (identical,
+    stateless starts, exactly as the sequential path did) but the heavy PPO
+    model load is cached per process, so each worker reads a model at most
+    once. Self-contained and picklable so it runs in a worker process.
+    """
+    base_config = Config.from_dict(base_cfg_dict)
+    config = apply_condition(base_config, override)
+    factory = make_agent_factory(spec, config)
+
+    episodes: List[Dict[str, Any]] = []
+    compliance: List[Any] = []
+    for scenario_name in scenarios:
+        for i in range(episodes_per_scenario):
+            seed = base_seed + i
+            scenario = build_scenario(scenario_name, seed=seed)
+            log_path = (Path(log_root) / display_key / cond_name /
+                        f"{scenario_name}_{seed}.jsonl"
+                        if keep_logs else None)
+            stats = run_episode(config, scenario, factory(),
+                                log_path=log_path)
+            record = {"scenario": scenario_name, "seed": seed,
+                      **stats.metrics}
+            if log_path is not None:
+                steps = read_episode(log_path)["steps"]
+                scores = score_episode(
+                    steps,
+                    safe_distance=config.avoidance.detector_safe_distance,
+                    collision_radius=config.simulation.collision_radius)
+                compliance.append(scores)
+                record["colregs"] = [s.to_dict() for s in scores]
+            episodes.append(record)
+        logger.info("%s | %s | %s done", display_key, cond_name,
+                    scenario_name)
+
+    agg = _aggregate(episodes, compliance)
+    agg["episodes"] = episodes
+    return display_key, cond_name, agg
+
+
 def run_benchmark(base_config: Config, suite: Dict[str, Any],
                   agent_specs: List[str], out_dir: str | Path,
-                  keep_logs: bool = True) -> Path:
+                  keep_logs: bool = True, workers: int = 1) -> Path:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     log_root = out / "episodes"
@@ -127,52 +198,57 @@ def run_benchmark(base_config: Config, suite: Dict[str, Any],
         "agents": {},
     }
 
+    # Probe each spec once for metadata + self-reported name (the PPO load
+    # this triggers is cached, so workers reuse it rather than re-reading).
+    probes = {spec: make_agent_factory(spec, base_config)().metadata()
+              for spec in agent_specs}
+    base_names = {spec: probes[spec].get("name", "") for spec in agent_specs}
+    keys = _display_keys(agent_specs, base_names)
+
+    # Pre-create agent shells in spec order so the output stays ordered
+    # regardless of which task finishes first under parallelism.
     for spec in agent_specs:
-        probe_meta = make_agent_factory(spec, base_config)().metadata()
-        agent_results: Dict[str, Any] = {
-            "spec": spec, "conditions": {},
+        results["agents"][keys[spec]] = {
+            "spec": spec, "name": keys[spec], "conditions": {},
             "about": {
-                "family": probe_meta.get("family", ""),
-                "author": probe_meta.get("author", ""),
-                "summary": probe_meta.get("summary", ""),
+                "family": probes[spec].get("family", ""),
+                "author": probes[spec].get("author", ""),
+                "summary": probes[spec].get("summary", ""),
             },
         }
-        for cond_name, override in suite["conditions"].items():
-            config = apply_condition(base_config, override)
-            results["config_hash"][cond_name] = config_hash(config)
-            factory = make_agent_factory(spec, config)
-            agent_name = factory().name
 
-            episodes = []
-            compliance = []
-            for scenario_name in suite["scenarios"]:
-                for i in range(suite["episodes_per_scenario"]):
-                    seed = suite["base_seed"] + i
-                    scenario = build_scenario(scenario_name, seed=seed)
-                    log_path = (log_root / agent_name / cond_name /
-                                f"{scenario_name}_{seed}.jsonl"
-                                if keep_logs else None)
-                    stats = run_episode(config, scenario, factory(),
-                                        log_path=log_path)
-                    record = {"scenario": scenario_name, "seed": seed,
-                              **stats.metrics}
-                    if log_path is not None:
-                        steps = read_episode(log_path)["steps"]
-                        scores = score_episode(
-                            steps,
-                            safe_distance=config.avoidance.detector_safe_distance,
-                            collision_radius=config.simulation.collision_radius)
-                        compliance.append(scores)
-                        record["colregs"] = [s.to_dict() for s in scores]
-                    episodes.append(record)
-                logger.info("%s | %s | %s done", agent_name, cond_name,
-                            scenario_name)
+    # Config hash is a property of the condition's physics, not the agent.
+    for cond_name, override in suite["conditions"].items():
+        results["config_hash"][cond_name] = config_hash(
+            apply_condition(base_config, override))
 
-            agent_results["name"] = agent_name
-            agent_results["conditions"][cond_name] = _aggregate(
-                episodes, compliance)
-            agent_results["conditions"][cond_name]["episodes"] = episodes
-        results["agents"][agent_name] = agent_results
+    tasks = [(spec, cond_name, override)
+             for spec in agent_specs
+             for cond_name, override in suite["conditions"].items()]
+    work = functools.partial(
+        _run_agent_condition,
+        base_cfg_dict=base_config.to_dict(), scenarios=suite["scenarios"],
+        episodes_per_scenario=suite["episodes_per_scenario"],
+        base_seed=suite["base_seed"], log_root=str(log_root),
+        keep_logs=keep_logs)
+
+    def store(display_key: str, cond_name: str, agg: Dict[str, Any]) -> None:
+        results["agents"][display_key]["conditions"][cond_name] = agg
+
+    if workers and workers > 1:
+        done = 0
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            futures = [ex.submit(work, spec, cond, ov, display_key=keys[spec])
+                       for spec, cond, ov in tasks]
+            for fut in as_completed(futures):
+                display_key, cond_name, agg = fut.result()
+                store(display_key, cond_name, agg)
+                done += 1
+                logger.info("[%d/%d] %s | %s complete",
+                            done, len(tasks), display_key, cond_name)
+    else:
+        for spec, cond, ov in tasks:
+            store(*work(spec, cond, ov, display_key=keys[spec]))
 
     (out / "results.json").write_text(json.dumps(results, indent=1))
     report = _leaderboard_markdown(results)

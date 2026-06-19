@@ -25,11 +25,16 @@ visibility into every decision any approach makes.
 
 ```bash
 # Score any agent on the benchmark and get a ranked leaderboard
-uv run python main.py benchmark --suite benchmarks/v1.yaml \
+# (--workers N runs agent/condition blocks in parallel across N cores)
+uv run python main.py benchmark --suite benchmarks/v1.yaml --workers 8 \
     --agent classical --agent mpc \
     --agent rl:models/ppo_vessel --agent rl-shielded:models/ppo_vessel \
     --agent your_package.your_module:YourAgent
 ```
+
+Pass the same agent class with different model paths to compare them
+(`--agent rl:models/ppo_10m --agent rl:models/ppo_vessel`); each is listed
+separately as `rl_ppo[ppo_10m]`, `rl_ppo[ppo_vessel]`.
 
 Submissions implement one small contract (`reset`/`decide`) — see
 [docs/SUBMITTING.md](docs/SUBMITTING.md). The leaderboard reports success /

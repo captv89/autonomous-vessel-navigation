@@ -107,7 +107,7 @@ def cmd_benchmark(args) -> None:
     config = Config.load(args.config)
     suite = load_suite(args.suite)
     report = run_benchmark(config, suite, args.agent, out_dir=args.out,
-                           keep_logs=not args.no_logs)
+                           keep_logs=not args.no_logs, workers=args.workers)
     print(f"leaderboard: {report}")
 
 
@@ -171,6 +171,9 @@ def main() -> None:
     p.add_argument("--no-logs", action="store_true",
                    help="skip per-episode logs (faster, disables COLREGs "
                         "scoring and replays)")
+    p.add_argument("--workers", type=int, default=1,
+                   help="parallel worker processes; one (agent, condition) "
+                        "block per task (default 1 = sequential)")
 
     p = sub.add_parser("replay", help="replay a recorded episode")
     p.add_argument("log", help="JSONL episode log")
