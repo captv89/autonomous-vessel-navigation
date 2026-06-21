@@ -48,7 +48,11 @@ class GridWorld:
         
         # Initialize empty grid (all navigable water)
         self.grid = np.zeros((height, width), dtype=np.float32)
-        
+
+        # Charted depth in metres (G7); None means binary land/water — water is
+        # treated as deep everywhere. Set by apply_shoaling_depth().
+        self.depth: Optional[np.ndarray] = None
+
         # Inflated grid for path planning (safety buffer around obstacles)
         self._inflated_grid = None
         self._inflation_radius = 0
@@ -93,7 +97,38 @@ class GridWorld:
                     self.grid[i, j] = 1.0
         
         logger.debug("Added circular obstacle at (%d, %d) r=%d", center_x, center_y, radius)
-    
+
+    def apply_shoaling_depth(self, deep_depth: float, shoal_slope: float,
+                             cell_size: float, grounding_threshold: float):
+        """Synthesize a depth field that shoals toward land (G7).
+
+        Water deepens with distance from the nearest land cell —
+        ``depth = min(deep_depth, shoal_slope * metres_from_land)`` — so
+        existing landmasses gain a realistic shoal apron with no scenario
+        edits. Land cells are depth 0. Cells whose depth is below
+        ``grounding_threshold`` (= draft + UKC margin) are then folded into
+        the no-go grid, so grounding, planning, and the lidar perception all
+        treat sub-clearance shoals exactly as they treat land. Binary
+        land/water is the special case: with no land the field is uniformly
+        ``deep_depth`` and nothing is folded in.
+        """
+        land_mask = self.grid > 0.5
+        if not land_mask.any():
+            self.depth = np.full((self.height, self.width), deep_depth,
+                                 dtype=np.float32)
+            return
+        if SCIPY_AVAILABLE:
+            dist_cells = ndimage.distance_transform_edt(~land_mask)
+        else:  # pragma: no cover - scipy is a hard dependency
+            raise RuntimeError(
+                "depth_model='shoaling' requires scipy for the distance "
+                "transform; install scipy or use depth_model='none'.")
+        depth = np.minimum(deep_depth, shoal_slope * dist_cells * cell_size)
+        self.depth = depth.astype(np.float32)
+        # Fold sub-clearance water into the no-go grid (land stays 1.0).
+        self.grid[self.depth < grounding_threshold] = 1.0
+        self._inflated_grid = None  # invalidate any cached planning inflation
+
     def is_valid(self, x: int, y: int) -> bool:
         
         """

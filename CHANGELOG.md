@@ -10,6 +10,19 @@ Benchmark v2 work (the frozen v1 exam is untouched; new scenarios and
 conditions land in additive suites so v1 numbers stay comparable).
 
 ### Added
+- **Depth / under-keel clearance (gap G7).** Opt-in depth chart
+  (`world.depth_model: shoaling`) replaces binary land/water: a synthesized
+  depth field shoals toward land (`src/environment/grid_world.py:
+  apply_shoaling_depth`, depth = min(deep_depth, shoal_slope × metres from
+  land)), grounding becomes *charted depth < draft + UKC margin*, and
+  sub-clearance water folds into the no-go grid so grounding, A* planning, and
+  the lidar perception all respect the shoal apron — no agent retrain needed
+  (shoals read like land). Binary land/water is the default special case
+  (depth 0 vs deep), so frozen v1 is unchanged; shipped as the `shoaling`
+  condition in `benchmarks/v2.yaml` (draft 2.0 m, UKC 0.5 m, ~10 m apron).
+  Coastal scenarios gain a realistic shoal apron that narrows fairways; open
+  water stays uniformly deep. Viewer depth contours and a depth observation
+  channel are deferred follow-ups.
 - **Speed actions in the RL action space (gap G5).** `rl.action_mode`
   selects `steer_speed` (default) — a compound `MultiDiscrete([heading,
   speed])` action where the policy modulates engine orders (`rl.speed_factors`

@@ -90,6 +90,13 @@ class Scenario:
             world.add_obstacle(x, y, w, h)
         for cx, cy, r in self.circle_obstacles:
             world.add_circular_obstacle(cx, cy, r)
+        if config.world.depth_model == "shoaling":
+            world.apply_shoaling_depth(
+                deep_depth=config.world.deep_depth,
+                shoal_slope=config.world.shoal_slope,
+                cell_size=config.world.cell_size,
+                grounding_threshold=(config.vessel.draft
+                                     + config.world.ukc_margin))
         return world
 
     def make_traffic(self) -> DynamicObstacleManager:

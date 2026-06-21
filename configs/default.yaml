@@ -9,6 +9,12 @@ world:
   width: 100
   height: 100
   cell_size: 10.0
+  # Depth / under-keel clearance (G7). "none" = binary land/water (frozen v1);
+  # "shoaling" synthesizes a depth field shoaling toward land. See WorldConfig.
+  depth_model: none
+  ukc_margin: 0.5
+  deep_depth: 20.0
+  shoal_slope: 0.25
 vessel:
   # ~30 m small craft to scale (cell_size = 10 m): cruise 5 m/s (~9.7 kn),
   # K=0.12 => ~4.2 deg/s steady yaw, turn radius ~6.8 cells (~68 m).
@@ -23,6 +29,7 @@ vessel:
   sideslip_gain: 1.2
   turn_speed_loss: 0.4
   surge_time_constant: 4.0
+  draft: 2.0
 environment:
   current_speed: 0.0
   current_direction_deg: 0.0

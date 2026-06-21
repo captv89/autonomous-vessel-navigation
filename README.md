@@ -188,7 +188,13 @@ finite update interval (stale fixes on moving targets), and occasional target
 loss — applied at the shared observation funnel so every agent (classical,
 MPC, RL) sees the same degraded picture, while ground truth still drives
 scoring. It measures sim-to-real robustness, not assumes it. Part of the
-benchmark-v2 roadmap, separate from the frozen v1 exam.
+benchmark-v2 roadmap, separate from the frozen v1 exam. v2 also adds a
+**shoaling** condition (gap G7): the binary land/water chart becomes a depth
+field that shoals toward shore, grounding when charted depth falls below the
+keel draft plus an under-keel-clearance margin (default draft 2.0 m, UKC
+0.5 m). Coastal scenarios gain a realistic shoal apron that narrows fairways;
+open water stays deep. Binary land is the special case (depth 0 vs deep), so
+v1 is unchanged.
 
 **Ship domain (asymmetric passing distance).** v1 judges "passed too close"
 with a circular safe distance. The `benchmarks/v2.yaml` suite scores the
@@ -268,7 +274,7 @@ main.py                 CLI: scenarios / simulate / train / evaluate /
                         benchmark / replay
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
 benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
-benchmarks/v2.yaml      v1 + a degraded-perception robustness condition
+benchmarks/v2.yaml      v1 + degraded-perception and shoaling (depth/UKC) conditions
 benchmarks/worlds.yaml  example suite over the file-defined worlds in worlds/
 worlds/                 file-defined worlds (YAML scenarios): static_only,
                         dynamic_only, mixed
@@ -336,7 +342,8 @@ counter-clockwise positive; config files use degrees where suffixed `_deg`.
 
 Defaults are **to scale for a ~30 m small craft**: cruise `0.5 cells/s`
 (5 m/s ≈ 9.7 kn), `K = 0.12` giving ~4.2 °/s steady yaw and a turn radius of
-~6.8 cells (~68 m, ~2.3 ship lengths). Traffic vessels are scaled to match
+~6.8 cells (~68 m, ~2.3 ship lengths), and (for the v2 depth chart) a 2.0 m
+keel draft. Traffic vessels are scaled to match
 (~0.25–0.45 cells/s). Edit `configs/default.yaml` to model a different
 platform (e.g. a merchant ship needs a larger world for its ~0.6 km turning
 circle).

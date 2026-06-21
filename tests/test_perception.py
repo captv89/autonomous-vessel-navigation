@@ -69,5 +69,7 @@ def test_dropout_loses_target():
 def test_v2_suite_has_degraded_condition():
     suite = load_suite("benchmarks/v2.yaml")
     assert suite["version"] == 2
-    assert set(suite["conditions"]) == {"calm", "disturbed", "degraded"}
+    assert set(suite["conditions"]) == {
+        "calm", "disturbed", "degraded", "shoaling"}
     assert suite["conditions"]["degraded"]["perception"]["enabled"] is True
+    assert suite["conditions"]["shoaling"]["world"]["depth_model"] == "shoaling"

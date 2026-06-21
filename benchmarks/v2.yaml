@@ -1,7 +1,8 @@
 # VesselNav-Bench v2
 #
-# Superset of v1: identical scenarios and seeds, plus a third `degraded`
-# condition that measures robustness to realistic (non-AIS-grade) perception.
+# Superset of v1: identical scenarios and seeds, plus a `degraded` condition
+# (robustness to non-AIS-grade perception) and a `shoaling` condition
+# (depth/under-keel-clearance instead of binary land, gap G7).
 # v1 (benchmarks/v1.yaml) stays frozen so its published numbers remain
 # comparable; v2 is the suite to report new perception-robustness results on.
 # The runner records the SHA-256 of each condition's resolved physics config,
@@ -12,7 +13,8 @@ description: >
   Seeded navigation suite for comparing autonomous-vessel navigation
   policies under identical physics, scenarios, and scoring: canonical
   COLREGs encounters, coastal planning, and randomized worlds, in calm,
-  disturbed (current + wind gust), and degraded-perception conditions.
+  disturbed (current + wind gust), degraded-perception, and shoaling
+  (depth / under-keel clearance) conditions.
 
 episodes_per_scenario: 20
 base_seed: 1000
@@ -59,3 +61,14 @@ conditions:
       speed_noise: 0.05          # cells/s (~0.5 m/s, ~1 kn)
       update_interval: 4.0       # s between fixes (staleness on moving targets)
       dropout_prob: 0.05         # occasional target loss per fix
+  # `shoaling` keeps calm physics and replaces binary land with a depth field
+  # that shoals toward shore (gap G7): grounding becomes depth < draft + UKC,
+  # and sub-clearance water joins the no-go chart, so coastal scenarios gain a
+  # realistic shoal apron while open-water scenarios are unchanged (all deep).
+  shoaling:
+    world:
+      depth_model: shoaling
+      ukc_margin: 0.5            # m of clearance required under the keel
+      deep_depth: 20.0          # m; charted depth far from land
+      shoal_slope: 0.25         # m of depth per m from land (~10 m no-go apron;
+                                # keeps the frozen coastal channel navigable)

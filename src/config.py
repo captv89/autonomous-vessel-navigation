@@ -33,6 +33,17 @@ class WorldConfig:
     width: int = 100                     # grid cells
     height: int = 100
     cell_size: float = 10.0              # meters per cell (for reporting only)
+    # Depth / under-keel clearance (G7). "none" keeps the binary land/water
+    # chart (frozen v1); "shoaling" synthesizes a depth field that shoals
+    # toward land (depth = min(deep_depth, shoal_slope * metres_from_land)),
+    # and folds sub-clearance water (depth < vessel.draft + ukc_margin) into
+    # the no-go grid so grounding, planning, and lidar all respect it.
+    depth_model: str = "none"            # "none" | "shoaling"
+    ukc_margin: float = 0.5              # m of clearance required under the keel
+    deep_depth: float = 20.0             # m; charted depth far from land
+    shoal_slope: float = 0.25            # m of depth gained per m from land
+    #                                    # (~10 m no-go apron; keeps the frozen
+    #                                    # coastal channel navigable)
 
 
 @dataclass
@@ -53,6 +64,7 @@ class VesselConfig:
     sideslip_gain: float = 1.2           # v_steady = -gain * u * r
     turn_speed_loss: float = 0.4         # u_dot -= loss * |r| * u
     surge_time_constant: float = 4.0     # s, speed response
+    draft: float = 2.0                   # m; under-keel clearance grounding (G7)
 
     @property
     def max_rudder(self) -> float:
