@@ -10,6 +10,17 @@ Benchmark v2 work (the frozen v1 exam is untouched; new scenarios and
 conditions land in additive suites so v1 numbers stay comparable).
 
 ### Added
+- **Speed actions in the RL action space (gap G5).** `rl.action_mode`
+  selects `steer_speed` (default) — a compound `MultiDiscrete([heading,
+  speed])` action where the policy modulates engine orders (`rl.speed_factors`
+  × `cruise_speed`, default `[1.0, 0.75, 0.5]`) like the classical/MPC
+  baselines — or `steer_only` for the original heading-only ablation. The env
+  decodes both spaces; `RLAgent` follows the *loaded model's* action space
+  (so an older steer-only `Discrete` model keeps loading) and logs separate
+  heading and speed probability tables per decision. The reward decomposition
+  is unchanged — slowing trades against progress/time, no new reward term.
+  A `steer_speed` model still needs training + benchmarking for the final
+  paper numbers.
 - **Asymmetric ship domain (gap G4).** Four-quadrant Goodwin domain
   (`src/sim/ship_domain.py`) shared by the COLREGs passing-distance scorer
   *and* the predictive avoider's separation check, so "passed too close" and

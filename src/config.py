@@ -178,6 +178,13 @@ class RLConfig:
     n_tracked_obstacles: int = 3         # nearest dynamic obstacles in observation
     heading_actions_deg: List[float] = field(
         default_factory=lambda: [-30.0, -15.0, -5.0, 0.0, 5.0, 15.0, 30.0])
+    # G5: speed (engine-order) actions. "steer_speed" gives the policy a
+    # compound (heading, speed) action so it can modulate speed like the
+    # classical/MPC baselines; "steer_only" keeps the original heading-only
+    # action space for ablation. speed_factors multiply vessel.cruise_speed.
+    action_mode: str = "steer_speed"     # "steer_speed" | "steer_only"
+    speed_factors: List[float] = field(
+        default_factory=lambda: [1.0, 0.75, 0.5])
     reward: RewardConfig = field(default_factory=RewardConfig)
 
 

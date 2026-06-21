@@ -77,6 +77,14 @@ rl:
   - 5.0
   - 15.0
   - 30.0
+  # G5: "steer_speed" gives the policy a compound (heading, speed) action so
+  # it can modulate engine orders like the classical/MPC baselines;
+  # "steer_only" pins speed to cruise for ablation. speed_factors x cruise_speed.
+  action_mode: steer_speed
+  speed_factors:
+  - 1.0
+  - 0.75
+  - 0.5
   reward:
     goal_reached: 100.0
     collision: -100.0
