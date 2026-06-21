@@ -29,7 +29,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from src.config import ShipDomain
 from src.environment.collision_detection import CollisionDetector
+from src.sim.ship_domain import domain_distance
 
 
 @dataclass
@@ -81,10 +83,18 @@ def _heading_series_turn(steps: List[dict], start: int, end: int,
 
 
 def score_episode(steps: List[dict], safe_distance: float,
-                  collision_radius: float) -> List[EncounterScore]:
-    """Score every close-quarters encounter in one recorded episode."""
+                  collision_radius: float,
+                  domain: Optional[ShipDomain] = None) -> List[EncounterScore]:
+    """Score every close-quarters encounter in one recorded episode.
+
+    The passing-distance component is judged against `domain` (an asymmetric
+    ship domain); the default circular domain reproduces the legacy
+    range/safe_distance test exactly.
+    """
     if not steps:
         return []
+    if domain is None:
+        domain = ShipDomain()
     detector = CollisionDetector(safe_distance=safe_distance,
                                  warning_distance=safe_distance * 2)
     vessel_ids = sorted({ob["id"] for s in steps for ob in s["obstacles"]})
@@ -127,7 +137,14 @@ def score_episode(steps: List[dict], safe_distance: float,
 
         turn = _heading_series_turn(steps, onset_i, end_i)
         collided = min_sep < collision_radius
-        sep_score = float(np.clip(min_sep / safe_distance, 0.0, 1.0))
+        # Passing-distance score uses the deepest ship-domain intrusion over
+        # the encounter (a close target ahead counts worse than one astern).
+        # Circular domain => min_sep / safe_distance, the legacy behavior.
+        sep_score = float(np.clip(
+            min(domain_distance(s["vessel"]["x"], s["vessel"]["y"],
+                                s["vessel"]["heading"], ob["x"], ob["y"],
+                                safe_distance, domain)
+                for _, s, ob in series), 0.0, 1.0))
 
         comp: Dict[str, float] = {}
         if encounter == "head-on":

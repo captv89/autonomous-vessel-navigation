@@ -59,6 +59,11 @@ avoidance:
   detector_warning_distance: 15.0
   time_horizon: 60.0
   avoidance_angle_deg: 30.0
+ship_domain:                     # all 1.0 = circular (frozen v1 scoring)
+  fore: 1.0
+  aft: 1.0
+  starboard: 1.0
+  port: 1.0
 rl:
   action_repeat: 5
   n_lidar_rays: 16

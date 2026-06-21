@@ -79,6 +79,20 @@ class EnvironmentConfig:
 
 
 @dataclass
+class ShipDomain:
+    """Asymmetric ship domain (Fujii/Goodwin) as multiples of the safe
+    distance, per quadrant of own-ship heading. All 1.0 (the default) is the
+    circular special case, so frozen v1 scoring is unchanged. Used by the
+    COLREGs scorer's passing-distance test (and, later, the avoider) so
+    "passed too close" reflects the domain mariners keep, not a bare circle.
+    """
+    fore: float = 1.0                    # clearance ahead
+    aft: float = 1.0                     # clearance astern
+    starboard: float = 1.0               # clearance to starboard
+    port: float = 1.0                    # clearance to port
+
+
+@dataclass
 class PerceptionConfig:
     """Degraded-perception model applied to *perceived traffic* only.
 
@@ -193,6 +207,7 @@ class Config:
     planner: PlannerConfig = field(default_factory=PlannerConfig)
     follower: FollowerConfig = field(default_factory=FollowerConfig)
     avoidance: AvoidanceConfig = field(default_factory=AvoidanceConfig)
+    ship_domain: ShipDomain = field(default_factory=ShipDomain)
     rl: RLConfig = field(default_factory=RLConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
 
@@ -222,8 +237,8 @@ class Config:
             "vessel": VesselConfig, "environment": EnvironmentConfig,
             "perception": PerceptionConfig, "control": ControlConfig,
             "planner": PlannerConfig, "follower": FollowerConfig,
-            "avoidance": AvoidanceConfig, "rl": RLConfig,
-            "training": TrainingConfig,
+            "avoidance": AvoidanceConfig, "ship_domain": ShipDomain,
+            "rl": RLConfig, "training": TrainingConfig,
         }
         kwargs = {name: build(t, data.get(name)) for name, t in sections.items()}
         return cls(**kwargs)

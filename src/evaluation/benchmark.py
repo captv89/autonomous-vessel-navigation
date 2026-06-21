@@ -170,7 +170,8 @@ def _run_agent_condition(
                 scores = score_episode(
                     steps,
                     safe_distance=config.avoidance.detector_safe_distance,
-                    collision_radius=config.simulation.collision_radius)
+                    collision_radius=config.simulation.collision_radius,
+                    domain=config.ship_domain)
                 compliance.append(scores)
                 record["colregs"] = [s.to_dict() for s in scores]
             episodes.append(record)
@@ -188,6 +189,10 @@ def run_benchmark(base_config: Config, suite: Dict[str, Any],
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     log_root = out / "episodes"
+
+    # Suite-wide config override (e.g. a v2 ship domain), applied under every
+    # condition. Folded into the config hash like any other physics/scoring.
+    base_config = apply_condition(base_config, suite.get("base"))
 
     results: Dict[str, Any] = {
         "suite": {k: suite[k] for k in

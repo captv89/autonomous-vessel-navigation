@@ -28,6 +28,17 @@ scenarios:
   - narrow_channel
   - random
 
+# Suite-wide config override, applied under every condition below. v2 scores
+# passing distance against an asymmetric ship domain (Fujii/Goodwin) instead
+# of a bare circle: more clearance ahead than astern, biased to starboard.
+# Multipliers are of the scorer's safe distance; all 1.0 would be circular.
+base:
+  ship_domain:
+    fore: 1.5
+    aft: 0.5
+    starboard: 1.2
+    port: 0.8
+
 # Each condition is a (partial) config override applied on top of the
 # benchmark's base config. Disturbances and perception noise are
 # scenario-seeded, so every agent experiences the identical realization per

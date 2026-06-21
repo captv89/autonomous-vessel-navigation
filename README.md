@@ -190,6 +190,16 @@ MPC, RL) sees the same degraded picture, while ground truth still drives
 scoring. It measures sim-to-real robustness, not assumes it. Part of the
 benchmark-v2 roadmap, separate from the frozen v1 exam.
 
+**Ship domain (asymmetric passing distance).** v1 judges "passed too close"
+with a circular safe distance. The `benchmarks/v2.yaml` suite scores the
+passing-distance component against a four-quadrant Goodwin ship domain —
+more clearance ahead than astern, biased to starboard (`src/sim/ship_domain.py`,
+fore 1.5× / aft 0.5× / stbd 1.2× / port 0.8× the safe distance) — which is how
+mariners and the compliance literature reason about closeness. All-1.0 (the
+default) is the circular special case, so frozen v1 numbers are unchanged. The
+scorer uses it now; the avoider is a planned follow-up. Part of the
+benchmark-v2 roadmap.
+
 **Reactive traffic (COLREGs give-way).** Traffic vessels default to holding
 their course, but each can be given a `compliance` level — `compliant` or
 `partial` makes a target take its own starboard give-way action when it is
