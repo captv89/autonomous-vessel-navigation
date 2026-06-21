@@ -195,10 +195,11 @@ with a circular safe distance. The `benchmarks/v2.yaml` suite scores the
 passing-distance component against a four-quadrant Goodwin ship domain —
 more clearance ahead than astern, biased to starboard (`src/sim/ship_domain.py`,
 fore 1.5× / aft 0.5× / stbd 1.2× / port 0.8× the safe distance) — which is how
-mariners and the compliance literature reason about closeness. All-1.0 (the
-default) is the circular special case, so frozen v1 numbers are unchanged. The
-scorer uses it now; the avoider is a planned follow-up. Part of the
-benchmark-v2 roadmap.
+mariners and the compliance literature reason about closeness. The same domain
+gates the predictive avoider's separation check, so the avoider and the scorer
+agree on what "clear" means (the classical agent and RL shield keep more room
+to starboard, less to port). All-1.0 (the default) is the circular special
+case, so frozen v1 numbers are unchanged. Part of the benchmark-v2 roadmap.
 
 **Reactive traffic (COLREGs give-way).** Traffic vessels default to holding
 their course, but each can be given a `compliance` level — `compliant` or

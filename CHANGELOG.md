@@ -10,14 +10,15 @@ Benchmark v2 work (the frozen v1 exam is untouched; new scenarios and
 conditions land in additive suites so v1 numbers stay comparable).
 
 ### Added
-- **Asymmetric ship domain (gap G4 — scorer).** Four-quadrant Goodwin domain
-  (`src/sim/ship_domain.py`) shared by the COLREGs passing-distance test:
-  "passed too close" is judged against the keep-clear zone mariners actually
-  hold (more room ahead than astern, biased to starboard) rather than a bare
-  circle. Circular is the default special case, so frozen v1 scoring is
-  unchanged; `benchmarks/v2.yaml` enables it via a new suite-level `base`
-  override (fore 1.5× / aft 0.5× / stbd 1.2× / port 0.8× safe distance).
-  Avoider integration is a planned follow-up.
+- **Asymmetric ship domain (gap G4).** Four-quadrant Goodwin domain
+  (`src/sim/ship_domain.py`) shared by the COLREGs passing-distance scorer
+  *and* the predictive avoider's separation check, so "passed too close" and
+  "keep clear" agree on the keep-clear zone mariners actually hold (more room
+  ahead than astern, biased to starboard) rather than a bare circle. Circular
+  is the default special case, so frozen v1 is unchanged; `benchmarks/v2.yaml`
+  enables it via a new suite-level `base` override (fore 1.5× / aft 0.5× /
+  stbd 1.2× / port 0.8× safe distance). Under v2 the classical agent and RL
+  shield keep more clearance to starboard and less to port, as expected.
 - **Degraded-perception condition (gap G3).** Seeded perception model
   (`src/sim/perception.py`) degrades *perceived traffic* — Gaussian
   position/course/speed noise, finite update interval (stale fixes on moving
