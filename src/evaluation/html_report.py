@@ -276,32 +276,38 @@ def _svg_radar(agents_ranked, cond: str, scenarios) -> str:
 
 def _svg_condition_dumbbell(agents_ranked, conditions) -> str:
     """Per-agent success in each condition, connected: robustness at a
-    glance (short line = robust, long line = condition-sensitive)."""
+    glance (short line = robust, long line = condition-sensitive). The first
+    condition is the baseline (solid marker); every other condition is a
+    hollow marker, with its success-rate delta vs baseline printed inline."""
     if len(conditions) < 2:
         return ""
-    c0, c1 = conditions[0], conditions[1]
+    base, others = conditions[0], conditions[1:]
     label_w, plot_w, row_h = 170, 420, 34
-    width = label_w + plot_w + 20
+    width = label_w + plot_w + 110
     def X(v): return label_w + v * plot_w
     rows = []
     for i, agent in enumerate(agents_ranked):
         y = 24 + i * row_h
-        s0 = agent["conditions"][c0]["success"]["rate"]
-        s1 = agent["conditions"][c1]["success"]["rate"]
+        rates = {c: agent["conditions"][c]["success"]["rate"] for c in conditions}
         color = AGENT_COLORS[i % len(AGENT_COLORS)]
+        lo, hi = min(rates.values()), max(rates.values())
+        marks = (f'<circle cx="{X(rates[base]):.0f}" cy="{y}" r="6" '
+                 f'fill="{color}"><title>{base}: {rates[base]:.0%}</title></circle>')
+        marks += "".join(
+            f'<circle cx="{X(rates[c]):.0f}" cy="{y}" r="6" fill="{color}" '
+            f'fill-opacity="0.45" stroke="{color}" stroke-width="2">'
+            f'<title>{c}: {rates[c]:.0%}</title></circle>' for c in others)
+        deltas = " · ".join(
+            f'{c[:4]} {rates[c] - rates[base]:+.0%}' for c in others)
         rows.append(
             f'<text x="{label_w - 10}" y="{y + 4}" text-anchor="end" '
             f'fill="#e8ebf0" font-size="12.5" font-weight="600">'
             f'{agent["name"]}</text>'
-            f'<line x1="{X(s0):.0f}" y1="{y}" x2="{X(s1):.0f}" y2="{y}" '
+            f'<line x1="{X(lo):.0f}" y1="{y}" x2="{X(hi):.0f}" y2="{y}" '
             f'stroke="{color}" stroke-width="3" stroke-opacity="0.55"/>'
-            f'<circle cx="{X(s0):.0f}" cy="{y}" r="6" fill="{color}">'
-            f'<title>{c0}: {s0:.0%}</title></circle>'
-            f'<circle cx="{X(s1):.0f}" cy="{y}" r="6" fill="{color}" '
-            f'fill-opacity="0.45" stroke="{color}" stroke-width="2">'
-            f'<title>{c1}: {s1:.0%}</title></circle>'
-            f'<text x="{X(max(s0, s1)) + 12:.0f}" y="{y + 4}" '
-            f'fill="#9aa3b2" font-size="11">{(s1 - s0):+.0%}</text>')
+            f'{marks}'
+            f'<text x="{X(hi) + 12:.0f}" y="{y + 4}" '
+            f'fill="#9aa3b2" font-size="11">{deltas}</text>')
     height = 24 + len(agents_ranked) * row_h + 26
     axis = "".join(
         f'<line x1="{X(v):.0f}" y1="14" x2="{X(v):.0f}" '
@@ -311,11 +317,11 @@ def _svg_condition_dumbbell(agents_ranked, conditions) -> str:
         for v in (0.25, 0.5, 0.75, 1.0))
     legend = (f'<circle cx="{label_w}" cy="{height - 4}" r="5" '
               f'fill="#9aa3b2"/><text x="{label_w + 10}" y="{height}" '
-              f'fill="#9aa3b2" font-size="11">{c0} (solid)</text>'
-              f'<circle cx="{label_w + 110}" cy="{height - 4}" r="5" '
+              f'fill="#9aa3b2" font-size="11">{base} (baseline, solid)</text>'
+              f'<circle cx="{label_w + 160}" cy="{height - 4}" r="5" '
               f'fill="none" stroke="#9aa3b2" stroke-width="2"/>'
-              f'<text x="{label_w + 120}" y="{height}" fill="#9aa3b2" '
-              f'font-size="11">{c1} (hollow)</text>')
+              f'<text x="{label_w + 170}" y="{height}" fill="#9aa3b2" '
+              f'font-size="11">{", ".join(others)} (hollow)</text>')
     return (f'<svg viewBox="0 0 {width} {height + 8}" role="img" '
             f'aria-label="Success rate per condition by agent">'
             f'{axis}{"".join(rows)}{legend}</svg>')
@@ -449,10 +455,11 @@ identical episodes.</p>""")
         key=lambda a: a["conditions"][conditions[0]]["benchmark_score"],
         reverse=True)
     if len(conditions) >= 2:
-        parts.append(f"""<h2>Robustness: calm vs disturbed</h2>
-<p class="sub">How much does each model lose (or gain) when current and
-wind gusts are added? Solid = {conditions[0]}, hollow =
-{conditions[1]}; the printed delta is the success-rate change.</p>
+        others = ", ".join(conditions[1:])
+        parts.append(f"""<h2>Robustness: {conditions[0]} vs {others}</h2>
+<p class="sub">How much does each model lose (or gain) when conditions get
+harder? Solid = {conditions[0]} (baseline), hollow = {others}; the printed
+delta is the success-rate change vs baseline.</p>
 <div class="figs"><figure><figcaption>Success rate by condition</figcaption>
 {_svg_condition_dumbbell(first_cond_rank, conditions)}</figure></div>""")
 

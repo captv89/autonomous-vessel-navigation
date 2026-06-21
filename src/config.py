@@ -79,6 +79,24 @@ class EnvironmentConfig:
 
 
 @dataclass
+class PerceptionConfig:
+    """Degraded-perception model applied to *perceived traffic* only.
+
+    Off by default, so the agent sees ground-truth targets (AIS-grade). The
+    benchmark's `degraded` condition turns it on to measure robustness to
+    realistic sensing: Gaussian position/course/speed noise, finite update
+    interval (staleness on moving targets), and occasional target loss.
+    Own-ship state, the goal, and land/lidar are never perturbed here.
+    """
+    enabled: bool = False
+    position_noise: float = 0.0          # std of Gaussian noise on target x,y (cells)
+    course_noise_deg: float = 0.0        # std on target heading (deg)
+    speed_noise: float = 0.0             # std on target speed (cells/s)
+    update_interval: float = 0.0         # s between target fixes (0 = every step)
+    dropout_prob: float = 0.0            # per-target chance of momentary loss per fix
+
+
+@dataclass
 class ControlConfig:
     """PD autopilot mapping desired heading -> rudder command."""
     heading_kp: float = 1.0
@@ -170,6 +188,7 @@ class Config:
     world: WorldConfig = field(default_factory=WorldConfig)
     vessel: VesselConfig = field(default_factory=VesselConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    perception: PerceptionConfig = field(default_factory=PerceptionConfig)
     control: ControlConfig = field(default_factory=ControlConfig)
     planner: PlannerConfig = field(default_factory=PlannerConfig)
     follower: FollowerConfig = field(default_factory=FollowerConfig)
@@ -201,7 +220,7 @@ class Config:
         sections = {
             "simulation": SimulationConfig, "world": WorldConfig,
             "vessel": VesselConfig, "environment": EnvironmentConfig,
-            "control": ControlConfig,
+            "perception": PerceptionConfig, "control": ControlConfig,
             "planner": PlannerConfig, "follower": FollowerConfig,
             "avoidance": AvoidanceConfig, "rl": RLConfig,
             "training": TrainingConfig,

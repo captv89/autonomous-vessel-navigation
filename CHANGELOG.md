@@ -4,6 +4,26 @@ All notable changes to VesselNav-Bench are documented here. The benchmark
 suite (`benchmarks/v1.yaml`) is frozen at each major version; results are
 only comparable between runs with matching config hashes.
 
+## [Unreleased]
+
+Benchmark v2 work (the frozen v1 exam is untouched; new scenarios and
+conditions land in additive suites so v1 numbers stay comparable).
+
+### Added
+- **Degraded-perception condition (gap G3).** Seeded perception model
+  (`src/sim/perception.py`) degrades *perceived traffic* — Gaussian
+  position/course/speed noise, finite update interval (stale fixes on moving
+  targets), and occasional target loss — at the shared observation funnel, so
+  every agent (classical, MPC, RL) sees the same noise while ground truth
+  still drives scoring. Shipped as the `degraded` condition in
+  `benchmarks/v2.yaml`; the leaderboard robustness chart now renders any
+  number of conditions. Off by default and in v1.
+- **Imazu problem set (gap G2)** — 22 canonical 1–4-ship encounter
+  geometries as scenarios + a diagnostic suite (`benchmarks/imazu.yaml`).
+- **Reactive / COLREGs-compliant traffic (gap G1)** — per-vessel
+  `compliance` level; give-way targets take their own starboard action
+  (`src/sim/reactive_traffic.py`). Off in frozen v1.
+
 ## [1.0.0] - 2026-06-14
 
 Archived on Zenodo: [10.5281/zenodo.20689528](https://doi.org/10.5281/zenodo.20689528)

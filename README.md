@@ -181,7 +181,14 @@ uv run python main.py benchmark --suite benchmarks/worlds.yaml \
 
 Benchmark conditions: **calm** (no disturbances) and **disturbed**
 (scenario-seeded random current up to 0.3 cells/s + wind gusts) — every
-agent faces the identical seeded episodes.
+agent faces the identical seeded episodes. The `benchmarks/v2.yaml` suite
+adds a third, **degraded** condition: instead of AIS-grade ground truth, the
+perceived traffic carries scenario-seeded position/course/speed noise, a
+finite update interval (stale fixes on moving targets), and occasional target
+loss — applied at the shared observation funnel so every agent (classical,
+MPC, RL) sees the same degraded picture, while ground truth still drives
+scoring. It measures sim-to-real robustness, not assumes it. Part of the
+benchmark-v2 roadmap, separate from the frozen v1 exam.
 
 **Reactive traffic (COLREGs give-way).** Traffic vessels default to holding
 their course, but each can be given a `compliance` level — `compliant` or
@@ -250,6 +257,7 @@ main.py                 CLI: scenarios / simulate / train / evaluate /
                         benchmark / replay
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
 benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
+benchmarks/v2.yaml      v1 + a degraded-perception robustness condition
 benchmarks/worlds.yaml  example suite over the file-defined worlds in worlds/
 worlds/                 file-defined worlds (YAML scenarios): static_only,
                         dynamic_only, mixed

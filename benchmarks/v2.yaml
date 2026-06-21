@@ -1,0 +1,50 @@
+# VesselNav-Bench v2
+#
+# Superset of v1: identical scenarios and seeds, plus a third `degraded`
+# condition that measures robustness to realistic (non-AIS-grade) perception.
+# v1 (benchmarks/v1.yaml) stays frozen so its published numbers remain
+# comparable; v2 is the suite to report new perception-robustness results on.
+# The runner records the SHA-256 of each condition's resolved physics config,
+# so numbers are only comparable between runs with matching hashes.
+name: vesselnav-bench
+version: 2
+description: >
+  Seeded navigation suite for comparing autonomous-vessel navigation
+  policies under identical physics, scenarios, and scoring: canonical
+  COLREGs encounters, coastal planning, and randomized worlds, in calm,
+  disturbed (current + wind gust), and degraded-perception conditions.
+
+episodes_per_scenario: 20
+base_seed: 1000
+
+scenarios:
+  - open_water
+  - head_on
+  - crossing_starboard
+  - crossing_port
+  - overtaking
+  - coastal
+  - multi_vessel
+  - narrow_channel
+  - random
+
+# Each condition is a (partial) config override applied on top of the
+# benchmark's base config. Disturbances and perception noise are
+# scenario-seeded, so every agent experiences the identical realization per
+# episode. `degraded` keeps calm physics and degrades only perception, to
+# isolate sensing robustness from environmental robustness.
+conditions:
+  calm: {}
+  disturbed:
+    environment:
+      randomize: true
+      max_random_current: 0.3
+      wind_gust_accel: 0.03
+  degraded:
+    perception:
+      enabled: true
+      position_noise: 1.2        # cells (~12 m at cell_size 10 m), AIS/GPS-grade
+      course_noise_deg: 6.0
+      speed_noise: 0.05          # cells/s (~0.5 m/s, ~1 kn)
+      update_interval: 4.0       # s between fixes (staleness on moving targets)
+      dropout_prob: 0.05         # occasional target loss per fix

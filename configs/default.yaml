@@ -29,6 +29,13 @@ environment:
   wind_gust_accel: 0.0
   randomize: false
   max_random_current: 0.3
+perception:
+  enabled: false
+  position_noise: 0.0
+  course_noise_deg: 0.0
+  speed_noise: 0.0
+  update_interval: 0.0
+  dropout_prob: 0.0
 control:
   heading_kp: 1.0
   heading_kd: 1.5
