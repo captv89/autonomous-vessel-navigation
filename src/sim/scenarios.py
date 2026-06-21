@@ -46,6 +46,10 @@ class Scenario:
     traffic: List[TrafficSpec] = field(default_factory=list)
     seed: Optional[int] = None
     description: str = ""
+    # Landmass-geometry class, derived from the static obstacles actually
+    # present. Used to group benchmark results by terrain type (e.g. grounding
+    # rate per geometry). "open water" = no static land.
+    geometry: str = "open water"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -76,7 +80,8 @@ class Scenario:
             circle_obstacles=_tuples(data.get("circle_obstacles")),
             traffic=traffic,
             seed=data.get("seed"),
-            description=data.get("description", ""))
+            description=data.get("description", ""),
+            geometry=data.get("geometry", "open water"))
 
     def make_world(self, config: Config) -> GridWorld:
         world = GridWorld(config.world.width, config.world.height,
@@ -161,6 +166,7 @@ def coastal(seed: Optional[int] = None) -> Scenario:
         start=(8, 12), start_heading_deg=75, goal=(92, 88),
         rect_obstacles=[(25, 0, 14, 45), (55, 55, 16, 45), (40, 75, 10, 10)],
         circle_obstacles=[(75, 30, 8), (20, 70, 6)],
+        geometry="channel + islands",
         traffic=[
             TrafficSpec(x=85, y=60, heading_deg=-130, speed=0.4),
             TrafficSpec(x=45, y=35, heading_deg=60, speed=0.3,
@@ -241,7 +247,7 @@ def coastal_random(seed: Optional[int] = None) -> Scenario:
         description=f"Procedural coastal world (seed={seed}).",
         start=start, start_heading_deg=heading, goal=goal,
         rect_obstacles=rects, circle_obstacles=circles, traffic=traffic,
-        seed=seed)
+        geometry="channel + islands", seed=seed)
 
 
 def random_scenario(seed: Optional[int] = None) -> Scenario:
@@ -284,6 +290,7 @@ def random_scenario(seed: Optional[int] = None) -> Scenario:
         name="random",
         description=f"Random scenario (seed={seed}).",
         start=start, start_heading_deg=heading, goal=goal,
+        geometry="scattered islands",
         circle_obstacles=circles, traffic=traffic, seed=seed)
 
 
@@ -311,6 +318,7 @@ def narrow_channel(seed: Optional[int] = None) -> Scenario:
                     "flavor).",
         start=(8, 50), start_heading_deg=0, goal=(92, 50),
         rect_obstacles=[(0, 0, 100, 36), (0, 64, 100, 36)],
+        geometry="narrow channel",
         traffic=[TrafficSpec(x=90, y=53, heading_deg=180, speed=0.4)],
         seed=seed)
 
@@ -501,3 +509,15 @@ def build_scenario(name: str, seed: Optional[int] = None) -> Scenario:
 
 def list_scenarios() -> List[Tuple[str, str]]:
     return [(name, fn().description) for name, fn in SCENARIOS.items()]
+
+
+def scenario_geometry(name: str) -> str:
+    """Landmass-geometry class for a scenario name or world-file path.
+
+    Derived from the scenario's static obstacles (see Scenario.geometry);
+    returns "open water" for unknown names.
+    """
+    try:
+        return build_scenario(name, seed=0).geometry
+    except KeyError:
+        return "open water"
