@@ -36,6 +36,33 @@ class TrafficSpec:
 
 
 @dataclass
+class TSScheme:
+    """A vertical-band traffic separation scheme (Rule 10, gap G9).
+
+    Lanes are vertical bands (separated along x) running in the general
+    direction `axis_deg` (90 = north-south); each lane carries traffic one way
+    (`flow_deg`). A central separation `zone` divides them. This is a chart
+    overlay, not a physical obstacle — the zone is passable (a crossing vessel
+    may transit it). Present only on TSS scenarios; when set it enables the
+    Rule 10 terms in the COLREGs scorer (`score_tss`).
+    """
+    axis_deg: float                                   # general lane direction
+    lanes: List[Tuple[float, float, float]]           # (x0, x1, flow_deg), cells
+    zone: Tuple[float, float]                          # (x0, x1) zone, cells
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"axis_deg": self.axis_deg,
+                "lanes": [list(l) for l in self.lanes],
+                "zone": list(self.zone)}
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "TSScheme":
+        return cls(axis_deg=float(d["axis_deg"]),
+                   lanes=[tuple(float(v) for v in l) for l in d["lanes"]],
+                   zone=tuple(float(v) for v in d["zone"]))
+
+
+@dataclass
 class Scenario:
     name: str
     start: Tuple[float, float]
@@ -46,6 +73,8 @@ class Scenario:
     traffic: List[TrafficSpec] = field(default_factory=list)
     seed: Optional[int] = None
     description: str = ""
+    # Traffic separation scheme (Rule 10, gap G9); None on non-TSS scenarios.
+    tss: Optional[TSScheme] = None
     # Landmass-geometry class, derived from the static obstacles actually
     # present. Used to group benchmark results by terrain type (e.g. grounding
     # rate per geometry). "open water" = no static land.
@@ -81,7 +110,8 @@ class Scenario:
             traffic=traffic,
             seed=data.get("seed"),
             description=data.get("description", ""),
-            geometry=data.get("geometry", "open water"))
+            geometry=data.get("geometry", "open water"),
+            tss=TSScheme.from_dict(data["tss"]) if data.get("tss") else None)
 
     def make_world(self, config: Config) -> GridWorld:
         world = GridWorld(config.world.width, config.world.height,
@@ -330,6 +360,50 @@ def narrow_channel(seed: Optional[int] = None) -> Scenario:
         seed=seed)
 
 
+def _tss_scheme() -> TSScheme:
+    """The canonical north-south scheme shared by the TSS scenarios (G9).
+
+    West lane is southbound, east lane northbound, so a northbound vessel keeps
+    the separation zone on its port hand (IMO convention). Headings: 90 = north
+    (+y), 270 = south (-y); lanes and zone are vertical x-bands.
+    """
+    return TSScheme(axis_deg=90.0,
+                    lanes=[(20.0, 40.0, 270.0), (60.0, 80.0, 90.0)],
+                    zone=(40.0, 60.0))
+
+
+def tss_transit(seed: Optional[int] = None) -> Scenario:
+    return Scenario(
+        name="tss_transit",
+        description="Transit a traffic separation scheme (Rule 10): proceed "
+                    "north in the east lane, overtaking a slower vessel ahead "
+                    "while opposing traffic runs south in the west lane.",
+        start=(70, 8), start_heading_deg=90, goal=(70, 92),
+        geometry="traffic separation scheme",
+        tss=_tss_scheme(),
+        traffic=[
+            TrafficSpec(x=70, y=40, heading_deg=90, speed=0.3),   # slow, same lane
+            TrafficSpec(x=30, y=85, heading_deg=270, speed=0.4),  # opposing lane
+        ],
+        seed=seed)
+
+
+def tss_crossing(seed: Optional[int] = None) -> Scenario:
+    return Scenario(
+        name="tss_crossing",
+        description="Cross a traffic separation scheme as near to right angles "
+                    "as practicable (Rule 10(c)): head east across the west "
+                    "(southbound) and east (northbound) lanes.",
+        start=(8, 50), start_heading_deg=0, goal=(92, 50),
+        geometry="traffic separation scheme",
+        tss=_tss_scheme(),
+        traffic=[
+            TrafficSpec(x=30, y=72, heading_deg=270, speed=0.5),  # west lane crosser
+            TrafficSpec(x=70, y=8, heading_deg=90, speed=0.4),    # east lane crosser
+        ],
+        seed=seed)
+
+
 def random_encounter(seed: Optional[int] = None) -> Scenario:
     """Seeded collision-course encounter with randomized geometry.
 
@@ -464,6 +538,8 @@ SCENARIOS = {
     "coastal_random": coastal_random,
     "multi_vessel": multi_vessel,
     "narrow_channel": narrow_channel,
+    "tss_transit": tss_transit,
+    "tss_crossing": tss_crossing,
     "random": random_scenario,
     "random_encounter": random_encounter,
 }

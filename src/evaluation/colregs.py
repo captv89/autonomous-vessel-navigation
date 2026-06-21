@@ -197,6 +197,83 @@ def score_episode(steps: List[dict], safe_distance: float,
     return out
 
 
+# Rule 10 (traffic separation scheme) scoring, gap G9.
+_TSS_FLOW_TOL_DEG = 90.0     # within this of a lane's flow counts as "with it"
+_TSS_ZONE_CAP = 0.30         # fraction of episode time in the zone scoring 0
+
+
+def _tss_lane_flow(tss, x: float) -> Optional[float]:
+    for x0, x1, flow_deg in tss.lanes:
+        if x0 <= x <= x1:
+            return flow_deg
+    return None
+
+
+def score_tss(steps: List[dict], tss) -> Dict[str, float]:
+    """Episode-level Rule 10 (traffic separation scheme) compliance.
+
+    The own ship's task is inferred from its net displacement relative to the
+    lane axis: motion *along* the axis is a transit (scored on proceeding with
+    the lane flow and keeping clear of the separation zone); motion *across* it
+    is a crossing (scored on crossing near right angles, Rule 10(c), and not
+    lingering in the zone). Components and the combined `score` are in [0, 1].
+    Returns {} when there is no scheme or no track.
+    """
+    if tss is None or not steps:
+        return {}
+    xs = np.array([s["vessel"]["x"] for s in steps])
+    ys = np.array([s["vessel"]["y"] for s in steps])
+    course = np.arctan2(ys[-1] - ys[0], xs[-1] - xs[0])
+    axis = np.radians(tss.axis_deg)
+    rel = abs(np.arctan2(np.sin(course - axis), np.cos(course - axis)))
+    rel = min(rel, np.pi - rel)                  # 0 = along axis, pi/2 = across
+
+    z0, z1 = tss.zone
+    frac_zone = float(np.mean((xs >= z0) & (xs <= z1)))
+
+    comp: Dict[str, float] = {}
+    if rel > np.pi / 4:                          # crossing the scheme
+        # A perpendicular crossing must pass through the zone; only penalize
+        # time beyond a direct crossing (lingering / paralleling the lanes).
+        span = abs(xs[-1] - xs[0])               # across-axis distance covered
+        expected = (z1 - z0) / span if span > 1e-6 else 0.0
+        excess = max(0.0, frac_zone - expected)
+        zone_clear = float(np.clip(1.0 - excess / _TSS_ZONE_CAP, 0.0, 1.0))
+        crossing_angle = float(np.clip(np.degrees(rel) / 90.0, 0.0, 1.0))
+        comp["crossing_angle"] = round(crossing_angle, 3)
+        comp["zone_clear"] = round(zone_clear, 3)
+        comp["score"] = round(0.6 * crossing_angle + 0.4 * zone_clear, 3)
+    else:                                        # transiting a lane
+        # A transit should never enter the zone: any time in it is penalized.
+        zone_clear = float(np.clip(1.0 - frac_zone / _TSS_ZONE_CAP, 0.0, 1.0))
+        comp["zone_clear"] = round(zone_clear, 3)
+        with_flow_n = total = 0
+        for s in steps:
+            v = s["vessel"]
+            flow = _tss_lane_flow(tss, v["x"])
+            if flow is None or v["speed"] <= 1e-3:
+                continue
+            total += 1
+            d = np.arctan2(np.sin(v["heading"] - np.radians(flow)),
+                           np.cos(v["heading"] - np.radians(flow)))
+            if abs(np.degrees(d)) <= _TSS_FLOW_TOL_DEG:
+                with_flow_n += 1
+        with_flow = with_flow_n / total if total else 1.0
+        comp["with_flow"] = round(with_flow, 3)
+        comp["score"] = round(0.6 * with_flow + 0.4 * zone_clear, 3)
+    return comp
+
+
+def aggregate_tss(per_episode: List[Dict[str, float]]) -> Dict[str, Any]:
+    """Mean Rule 10 score over the episodes that ran under a TSS."""
+    scored = [r for r in per_episode if r]
+    if not scored:
+        return {"episodes": 0}
+    return {"episodes": len(scored),
+            "mean_score": round(
+                float(np.mean([r["score"] for r in scored])), 3)}
+
+
 def aggregate_compliance(per_episode: List[List[EncounterScore]]
                          ) -> Dict[str, Any]:
     """Mean compliance overall and per encounter type."""

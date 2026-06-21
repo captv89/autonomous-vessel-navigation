@@ -196,6 +196,15 @@ keel draft plus an under-keel-clearance margin (default draft 2.0 m, UKC
 open water stays deep. Binary land is the special case (depth 0 vs deep), so
 v1 is unchanged.
 
+**Traffic separation schemes (Rule 10).** v2 adds a `TSScheme` chart overlay
+(two opposed lanes around a central separation zone) and two scenarios:
+`tss_transit` (proceed with the lane flow, overtaking inside the lane) and
+`tss_crossing` (cross the scheme as near to right angles as practicable). The
+COLREGs scorer gains Rule 10 terms — crossing angle, with-the-flow lane use,
+and zone keep-clear — that switch on only when a scenario declares a scheme.
+The separation zone is a soft scored region, not a wall: a crossing vessel may
+transit it, but lingering or going the wrong way in a lane costs score.
+
 **Ship domain (asymmetric passing distance).** v1 judges "passed too close"
 with a circular safe distance. The `benchmarks/v2.yaml` suite scores the
 passing-distance component against a four-quadrant Goodwin ship domain —

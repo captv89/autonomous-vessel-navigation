@@ -39,7 +39,8 @@ import yaml
 
 from src.config import Config
 from src.evaluation.runner import run_episode
-from src.evaluation.colregs import score_episode, aggregate_compliance
+from src.evaluation.colregs import (score_episode, aggregate_compliance,
+                                     score_tss, aggregate_tss)
 from src.evaluation.stats import (bootstrap_mean, fmt_mean, fmt_rate,
                                   wilson_interval)
 from src.sim.recorder import read_episode
@@ -154,6 +155,7 @@ def _run_agent_condition(
 
     episodes: List[Dict[str, Any]] = []
     compliance: List[Any] = []
+    tss_scores: List[Dict[str, float]] = []
     for scenario_name in scenarios:
         for i in range(episodes_per_scenario):
             seed = base_seed + i
@@ -174,11 +176,17 @@ def _run_agent_condition(
                     domain=config.ship_domain)
                 compliance.append(scores)
                 record["colregs"] = [s.to_dict() for s in scores]
+                if scenario.tss is not None:
+                    rule10 = score_tss(steps, scenario.tss)
+                    record["rule10"] = rule10
+                    tss_scores.append(rule10)
             episodes.append(record)
         logger.info("%s | %s | %s done", display_key, cond_name,
                     scenario_name)
 
     agg = _aggregate(episodes, compliance)
+    if tss_scores:
+        agg["rule10"] = aggregate_tss(tss_scores)
     agg["episodes"] = episodes
     return display_key, cond_name, agg
 

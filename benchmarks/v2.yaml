@@ -1,8 +1,9 @@
 # VesselNav-Bench v2
 #
-# Superset of v1: identical scenarios and seeds, plus a `degraded` condition
-# (robustness to non-AIS-grade perception) and a `shoaling` condition
-# (depth/under-keel-clearance instead of binary land, gap G7).
+# Superset of v1: all v1 scenarios and seeds, plus two traffic-separation-scheme
+# scenarios (gap G9), a `degraded` condition (robustness to non-AIS-grade
+# perception), and a `shoaling` condition (depth/under-keel-clearance instead of
+# binary land, gap G7).
 # v1 (benchmarks/v1.yaml) stays frozen so its published numbers remain
 # comparable; v2 is the suite to report new perception-robustness results on.
 # The runner records the SHA-256 of each condition's resolved physics config,
@@ -28,6 +29,8 @@ scenarios:
   - coastal
   - multi_vessel
   - narrow_channel
+  - tss_transit
+  - tss_crossing
   - random
 
 # Suite-wide config override, applied under every condition below. v2 scores

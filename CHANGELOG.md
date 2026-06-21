@@ -10,6 +10,17 @@ Benchmark v2 work (the frozen v1 exam is untouched; new scenarios and
 conditions land in additive suites so v1 numbers stay comparable).
 
 ### Added
+- **Traffic separation schemes / Rule 10 (gap G9).** A `TSScheme` chart
+  overlay (`src/sim/scenarios.py`) — two opposed lanes around a central
+  separation zone — plus `tss_transit` and `tss_crossing` scenarios, added to
+  `benchmarks/v2.yaml`. The COLREGs scorer gains Rule 10 terms (`score_tss`):
+  crossing angle near 90° (Rule 10(c)), with-the-flow lane use, and zone
+  keep-clear, surfaced per episode as `rule10` and aggregated as a mean Rule 10
+  score. The terms activate only when a scenario declares a scheme, so all
+  other scenarios are unaffected; the separation zone is a soft scored region,
+  not a physical wall (a crossing vessel may transit it, but a perpendicular
+  crossing's unavoidable zone time is not penalized — only lingering /
+  wrong-way use is). The headline benchmark score is unchanged.
 - **Depth / under-keel clearance (gap G7).** Opt-in depth chart
   (`world.depth_model: shoaling`) replaces binary land/water: a synthesized
   depth field shoals toward land (`src/environment/grid_world.py:
