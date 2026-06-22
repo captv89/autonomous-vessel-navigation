@@ -22,12 +22,35 @@ Every consumer (engine, avoidance rollouts) constructs vessels through
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, Tuple
+import dataclasses
+from typing import Dict, Optional, Protocol, Tuple
 
 import numpy as np
 
-from src.config import Config
+from src.config import Config, VesselConfig
 from src.vessel.vessel_model import NomotoVessel
+
+
+# Maneuvering parameters jittered by hull randomization (G11). The Nomoto
+# channel (K, T) is shared by both models; the rest are fossen3-only but
+# scaling them when the nomoto model is selected is harmless.
+HULL_RANDOM_PARAMS = ("nomoto_K", "nomoto_T", "sway_time_constant",
+                      "sideslip_gain", "turn_speed_loss",
+                      "surge_time_constant")
+
+
+def sample_hull(vc: VesselConfig,
+                rng: np.random.Generator) -> Tuple[VesselConfig, Dict[str, float]]:
+    """Return a per-episode VesselConfig with jittered hull parameters.
+
+    Each parameter in HULL_RANDOM_PARAMS is scaled by an independent factor
+    drawn uniformly from [1 - hull_jitter, 1 + hull_jitter]. Deterministic
+    given `rng`; the sampled values are returned for logging/inspection.
+    """
+    j = vc.hull_jitter
+    sampled = {name: float(getattr(vc, name) * rng.uniform(1.0 - j, 1.0 + j))
+               for name in HULL_RANDOM_PARAMS}
+    return dataclasses.replace(vc, **sampled), sampled
 
 
 class VesselDynamics(Protocol):

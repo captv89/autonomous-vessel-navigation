@@ -194,7 +194,16 @@ field that shoals toward shore, grounding when charted depth falls below the
 keel draft plus an under-keel-clearance margin (default draft 2.0 m, UKC
 0.5 m). Coastal scenarios gain a realistic shoal apron that narrows fairways;
 open water stays deep. Binary land is the special case (depth 0 vs deep), so
-v1 is unchanged.
+v1 is unchanged. Two more v2 conditions: **hull_randomized** (gap G11) jitters
+the own-ship maneuvering parameters (Nomoto K/T plus the 3-DOF dynamics
+constants) by ±25% per episode from an independent scenario-seeded stream —
+the controller still plans with the nominal model, so it faces a plant it does
+not know exactly (domain randomization for own-ship variety). **restricted_
+visibility** (gap G10, Rule 19) pairs radar-only perception (sparser, lossier
+than `degraded`) with a scorer that drops the give-way/stand-on roles of
+Rules 14-17 in favour of Rule 19: action in ample time and, for a target
+forward of the beam, no alteration to port. Both are off by default, so v1 is
+unchanged.
 
 **Traffic separation schemes (Rule 10).** v2 adds a `TSScheme` chart overlay
 (two opposed lanes around a central separation zone) and two scenarios:
@@ -283,7 +292,7 @@ main.py                 CLI: scenarios / simulate / train / evaluate /
                         benchmark / replay
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
 benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
-benchmarks/v2.yaml      v1 + degraded-perception and shoaling (depth/UKC) conditions
+benchmarks/v2.yaml      v1 + degraded-perception, shoaling (depth/UKC), hull-randomized, and restricted-visibility (Rule 19) conditions
 benchmarks/worlds.yaml  example suite over the file-defined worlds in worlds/
 worlds/                 file-defined worlds (YAML scenarios): static_only,
                         dynamic_only, mixed

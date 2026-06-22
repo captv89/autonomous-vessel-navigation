@@ -70,6 +70,11 @@ def test_v2_suite_has_degraded_condition():
     suite = load_suite("benchmarks/v2.yaml")
     assert suite["version"] == 2
     assert set(suite["conditions"]) == {
-        "calm", "disturbed", "degraded", "shoaling"}
+        "calm", "disturbed", "degraded", "shoaling",
+        "hull_randomized", "restricted_visibility"}
     assert suite["conditions"]["degraded"]["perception"]["enabled"] is True
     assert suite["conditions"]["shoaling"]["world"]["depth_model"] == "shoaling"
+    assert (suite["conditions"]["hull_randomized"]["vessel"]["randomize_hull"]
+            is True)
+    assert (suite["conditions"]["restricted_visibility"]["perception"]
+            ["restricted_visibility"] is True)

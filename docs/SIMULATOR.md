@@ -76,8 +76,8 @@ codebase.
 | G7 | **Depth / draft** (charted depths, under-keel clearance instead of binary land) | Rare in DRL papers, real for mariners | ✅ Addressed for v2: opt-in depth field (`world.depth_model: shoaling`) that shoals toward land (`src/environment/grid_world.py: apply_shoaling_depth`); grounding becomes *charted depth < draft + UKC margin* and sub-clearance water folds into the no-go chart, so grounding, planning, and lidar all respect the shoal apron. Binary land/water is the default special case (frozen v1 unchanged); shipped as the `shoaling` condition in `benchmarks/v2.yaml` (draft 2.0 m, UKC 0.5 m). Depth contours in the viewer and a depth observation channel are deferred follow-ups | Medium for coastal realism | Medium — grid becomes a depth field |
 | G8 | **AIS-replay scenarios** (encounters mined from real traffic data) | Emerging best practice for test generation | Synthetic scenarios only | Medium-High for external validity | High — data sourcing + map alignment |
 | G9 | **Traffic separation schemes / Rule 10** (lanes, crossing them at right angles) | Rare | ✅ Addressed for v2: a `TSScheme` chart overlay (`src/sim/scenarios.py`) with two opposed lanes and a central separation zone, plus `tss_transit` and `tss_crossing` scenarios; the COLREGs scorer gains Rule 10 terms (`score_tss`: crossing-angle near 90°, with-the-flow lane use, and zone keep-clear) that activate only when a scenario declares a scheme. The separation zone is a soft scored region, not a wall (a crossing vessel may transit it). Added to `benchmarks/v2.yaml` | Medium — distinctive scenario type | Low-Medium once G7-style charts exist |
-| G10 | **Restricted visibility / Rule 19** | Rare | Not modeled | Low-Medium; requires G3 first | Low after G3 |
-| G11 | **Hull parameter randomization** (own-ship variety) | Common as domain randomization | Config-selectable but fixed per run | Low-Medium | Low — randomize K/T per episode like the current |
+| G10 | **Restricted visibility / Rule 19** | Rare | ✅ Addressed for v2: a `restricted_visibility` condition in `benchmarks/v2.yaml` that pairs radar-only perception (sparser fixes / heavier dropout than `degraded`, building on G3) with a scorer that drops the give-way/stand-on roles of Rules 14-17 in favour of Rule 19 (`colregs.py: score_episode(restricted_visibility=True)`) — action in ample time and, for a target forward of the beam, no alteration to port (Rule 19(d)(i)). Off in frozen v1 | Low-Medium; requires G3 first | Low after G3 |
+| G11 | **Hull parameter randomization** (own-ship variety) | Common as domain randomization | ✅ Addressed for v2: opt-in per-episode jitter of the own-ship maneuvering parameters (K, T + the 3-DOF dynamics constants) from an independent scenario-seeded stream (`vessel.randomize_hull` / `hull_jitter`, `src/vessel/dynamics.py: sample_hull`). The controller still plans with the nominal model, so it faces a plant it does not know exactly. Shipped as the `hull_randomized` condition; off per run by default (frozen v1 unchanged) | Low-Medium | Low — randomize K/T per episode like the current |
 
 **What we already match or exceed:** Gymnasium API, lidar-style
 rangefinders, stochastic seeded environments, current disturbance, full
@@ -88,8 +88,8 @@ quantitative per-rule COLREGs scoring.
 
 **Recommended order for benchmark v2:** G2 (cheap credibility) → G1 (the
 single biggest realism gap) → G3 as a third benchmark condition
-("degraded perception") → G4 → G5 → G7 → G9. G6, G8, G10-G11 are roadmap
-items.
+("degraded perception") → G4 → G5 → G7 → G9 → G11 → G10. G6 and G8 remain
+roadmap items.
 
 ---
 

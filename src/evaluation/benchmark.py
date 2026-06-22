@@ -173,7 +173,8 @@ def _run_agent_condition(
                     steps,
                     safe_distance=config.avoidance.detector_safe_distance,
                     collision_radius=config.simulation.collision_radius,
-                    domain=config.ship_domain)
+                    domain=config.ship_domain,
+                    restricted_visibility=config.perception.restricted_visibility)
                 compliance.append(scores)
                 record["colregs"] = [s.to_dict() for s in scores]
                 if scenario.tss is not None:

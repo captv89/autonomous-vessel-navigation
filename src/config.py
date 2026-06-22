@@ -65,6 +65,16 @@ class VesselConfig:
     turn_speed_loss: float = 0.4         # u_dot -= loss * |r| * u
     surge_time_constant: float = 4.0     # s, speed response
     draft: float = 2.0                   # m; under-keel clearance grounding (G7)
+    # Own-ship hull randomization (G11). Off by default so the frozen physics
+    # is unchanged. When on, the maneuvering parameters (K, T and the fossen3
+    # dynamics constants) are scaled per episode by a factor drawn uniformly
+    # from [1 - hull_jitter, 1 + hull_jitter], from an independent
+    # scenario-seeded stream — standard domain randomization for own-ship
+    # variety / sim-to-real transfer. The controller still plans with the
+    # nominal values (see make_vessel callers), so the agent faces a plant it
+    # does not know exactly.
+    randomize_hull: bool = False
+    hull_jitter: float = 0.25            # +/- fraction on each hull parameter
 
     @property
     def max_rudder(self) -> float:
@@ -120,6 +130,12 @@ class PerceptionConfig:
     speed_noise: float = 0.0             # std on target speed (cells/s)
     update_interval: float = 0.0         # s between target fixes (0 = every step)
     dropout_prob: float = 0.0            # per-target chance of momentary loss per fix
+    # Restricted visibility (Rule 19, G10). When on, the COLREGs scorer drops
+    # the give-way/stand-on roles of Rules 14-17 and scores every encounter
+    # under Rule 19 instead (action in ample time; avoid altering to port for a
+    # vessel forward of the beam). Pair with degraded perception above to model
+    # sensing in fog. Off by default, so frozen scoring is unchanged.
+    restricted_visibility: bool = False
 
 
 @dataclass

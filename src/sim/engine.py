@@ -14,6 +14,7 @@ pygame viewer all drive the exact same physics.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,7 +24,7 @@ import numpy as np
 from src.config import Config
 from src.environment.grid_world import GridWorld
 from src.environment.dynamic_obstacles import DynamicObstacleManager
-from src.vessel.dynamics import make_vessel
+from src.vessel.dynamics import make_vessel, sample_hull
 from src.sim.reactive_traffic import steer_reactive_traffic
 from src.sim.scenarios import Scenario
 
@@ -97,11 +98,25 @@ class SimulationEngine:
             cur = env.current_vector()
             self.current = (float(cur[0]), float(cur[1]))
 
+        # Own-ship hull randomization (G11): jitter the maneuvering parameters
+        # per episode from a stream independent of the disturbance RNG, so
+        # current/gust realizations are unchanged whether or not this is on.
+        # The vessel is built from the jittered config; everything else (the
+        # autopilot, the avoider's rollouts) keeps the nominal config, so the
+        # controller plans against a plant it does not know exactly.
+        veh_cfg = cfg
+        self.hull_params: Dict[str, float] = {}
+        if cfg.vessel.randomize_hull:
+            seed = sc.seed if sc.seed is not None else 0
+            hull_rng = np.random.default_rng(seed + 7919)
+            jittered, self.hull_params = sample_hull(cfg.vessel, hull_rng)
+            veh_cfg = dataclasses.replace(cfg, vessel=jittered)
+
         # Depart at half cruise speed: vessels align with their route before
         # coming up to speed, which keeps the initial turn transient from
         # building large cross-track error (same condition for all agents).
         self.vessel = make_vessel(
-            cfg, x=float(sc.start[0]), y=float(sc.start[1]),
+            veh_cfg, x=float(sc.start[0]), y=float(sc.start[1]),
             heading=np.radians(sc.start_heading_deg),
             speed=0.5 * cfg.vessel.cruise_speed,
             current=self.current, wind_gust_accel=env.wind_gust_accel,

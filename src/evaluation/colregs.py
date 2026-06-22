@@ -84,12 +84,18 @@ def _heading_series_turn(steps: List[dict], start: int, end: int,
 
 def score_episode(steps: List[dict], safe_distance: float,
                   collision_radius: float,
-                  domain: Optional[ShipDomain] = None) -> List[EncounterScore]:
+                  domain: Optional[ShipDomain] = None,
+                  restricted_visibility: bool = False) -> List[EncounterScore]:
     """Score every close-quarters encounter in one recorded episode.
 
     The passing-distance component is judged against `domain` (an asymmetric
     ship domain); the default circular domain reproduces the legacy
     range/safe_distance test exactly.
+
+    When `restricted_visibility` is set, every encounter is scored under
+    Rule 19 instead of Rules 14-17 (gap G10): there are no give-way/stand-on
+    roles; compliance rewards action in ample time and, for a vessel forward
+    of the beam, avoiding an alteration to port (Rule 19(d)(i)).
     """
     if not steps:
         return []
@@ -147,7 +153,30 @@ def score_episode(steps: List[dict], safe_distance: float,
                 for _, s, ob in series), 0.0, 1.0))
 
         comp: Dict[str, float] = {}
-        if encounter == "head-on":
+        if restricted_visibility:
+            # Rule 19: in restricted visibility the give-way/stand-on roles do
+            # not apply; the test is action in ample time and, for a target
+            # forward of the beam, avoiding an alteration to port.
+            role = "any"
+            forward_of_beam = abs(bearing) <= np.pi / 2
+            early_end = onset_i + max(
+                1, int(0.5 * onset_tcpa
+                       / max(steps[1]["t"] - steps[0]["t"], 1e-6)))
+            early_turn = _heading_series_turn(
+                steps, onset_i, min(early_end, end_i))
+            comp["early_action"] = 1.0 if early_turn is not None else 0.0
+            comp["safe_distance"] = sep_score
+            if forward_of_beam:
+                # Rule 19(d)(i): avoid altering to port for a vessel forward of
+                # the beam (a starboard alteration, or holding, is compliant).
+                comp["avoid_port_turn"] = 0.0 if turn == "port" else 1.0
+                score = (0.3 * comp["early_action"]
+                         + 0.3 * comp["avoid_port_turn"]
+                         + 0.4 * comp["safe_distance"])
+            else:
+                score = (0.4 * comp["early_action"]
+                         + 0.6 * comp["safe_distance"])
+        elif encounter == "head-on":
             role = "give_way"
             comp["starboard_turn"] = 1.0 if turn == "starboard" else 0.0
             comp["safe_distance"] = sep_score

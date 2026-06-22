@@ -2,8 +2,9 @@
 #
 # Superset of v1: all v1 scenarios and seeds, plus two traffic-separation-scheme
 # scenarios (gap G9), a `degraded` condition (robustness to non-AIS-grade
-# perception), and a `shoaling` condition (depth/under-keel-clearance instead of
-# binary land, gap G7).
+# perception), a `shoaling` condition (depth/under-keel-clearance instead of
+# binary land, gap G7), a `hull_randomized` condition (own-ship model mismatch,
+# gap G11), and a `restricted_visibility` condition (Rule 19 scoring, gap G10).
 # v1 (benchmarks/v1.yaml) stays frozen so its published numbers remain
 # comparable; v2 is the suite to report new perception-robustness results on.
 # The runner records the SHA-256 of each condition's resolved physics config,
@@ -75,3 +76,26 @@ conditions:
       deep_depth: 20.0          # m; charted depth far from land
       shoal_slope: 0.25         # m of depth per m from land (~10 m no-go apron;
                                 # keeps the frozen coastal channel navigable)
+  # `hull_randomized` keeps calm physics but jitters the own-ship maneuvering
+  # parameters (Nomoto K/T + the 3-DOF dynamics constants) per episode by
+  # +/-25% (gap G11). The realization is scenario-seeded, so every agent faces
+  # the identical hull per (scenario, seed); the controller still plans with
+  # the nominal model, so this measures robustness to own-ship model mismatch.
+  hull_randomized:
+    vessel:
+      randomize_hull: true
+      hull_jitter: 0.25
+  # `restricted_visibility` models navigation in fog (Rule 19, gap G10): radar-
+  # only perception (sparser fixes, more dropout, larger noise than `degraded`)
+  # and a scorer that drops the give-way/stand-on roles of Rules 14-17 in favour
+  # of Rule 19 (action in ample time; no alteration to port for a vessel forward
+  # of the beam). Scenario-seeded, so every agent sees the identical realization.
+  restricted_visibility:
+    perception:
+      enabled: true
+      restricted_visibility: true
+      position_noise: 2.0        # cells (~20 m); radar-only, coarser than AIS
+      course_noise_deg: 10.0
+      speed_noise: 0.08          # cells/s
+      update_interval: 6.0       # s between fixes (slow radar plot)
+      dropout_prob: 0.10         # heavier target loss in clutter
