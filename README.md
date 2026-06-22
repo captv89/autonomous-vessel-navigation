@@ -187,9 +187,11 @@ state ~3–4): the fossen3 model gains a mean speed loss from added resistance
 (scaling as Hs², worst in head/bow seas — STAwave-1) and a first-order yaw
 oscillation at the wave encounter frequency (modal frequency from a
 Pierson–Moskowitz sea), so course-keeping and COLREGs maneuvers face a real
-seaway. The wave phase is scenario-seeded, and the predictor's rollouts do
-not model it (an unpredictable disturbance, like the gusts). Off by default
-(Hs 0), so frozen v1 is unchanged. The `benchmarks/v2.yaml` suite
+seaway. The wave phase is scenario-seeded — and so is the wave direction
+(drawn per episode from the seed, so scenarios aren't locked into a fixed
+head/following sea) — and the predictor's rollouts do not model the sea state
+(an unpredictable disturbance, like the gusts). Off by default (Hs 0), so
+frozen v1 is unchanged. The `benchmarks/v2.yaml` suite
 adds a third, **degraded** condition: instead of AIS-grade ground truth, the
 perceived traffic carries scenario-seeded position/course/speed noise, a
 finite update interval (stale fixes on moving targets), and occasional target

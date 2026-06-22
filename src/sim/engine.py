@@ -94,9 +94,19 @@ class SimulationEngine:
             direction = rng.uniform(-np.pi, np.pi)
             self.current = (float(speed * np.cos(direction)),
                             float(speed * np.sin(direction)))
+            # Sea state (G6): with a sea running, the wave direction is also
+            # drawn from the scenario seed (the height stays as configured), so
+            # an episode is not locked into a fixed head/following sea. Guarded
+            # by Hs > 0 so the RNG stream — and thus frozen runs without waves —
+            # is byte-identical to before when no sea state is configured.
+            if env.significant_wave_height > 0.0:
+                self.wave_direction = float(rng.uniform(-np.pi, np.pi))
+            else:
+                self.wave_direction = np.radians(env.wave_direction_deg)
         else:
             cur = env.current_vector()
             self.current = (float(cur[0]), float(cur[1]))
+            self.wave_direction = np.radians(env.wave_direction_deg)
 
         # Own-ship hull randomization (G11): jitter the maneuvering parameters
         # per episode from a stream independent of the disturbance RNG, so
@@ -121,7 +131,7 @@ class SimulationEngine:
             speed=0.5 * cfg.vessel.cruise_speed,
             current=self.current, wind_gust_accel=env.wind_gust_accel,
             significant_wave_height=env.significant_wave_height,
-            wave_direction=np.radians(env.wave_direction_deg),
+            wave_direction=self.wave_direction,
             rng=rng)
         self.traffic: DynamicObstacleManager = sc.make_traffic()
         self.collision_count = 0

@@ -59,14 +59,15 @@ conditions:
   # mean speed loss from added resistance (worst in head/bow seas) and a
   # first-order yaw oscillation at the wave encounter frequency, so course-
   # keeping and COLREGs maneuvers face a realistic seaway. Hs ~ 1.25 m is a
-  # sea state ~3-4 (slight-to-moderate). Off in frozen v1.
+  # sea state ~3-4 (slight-to-moderate). With randomize on, the wave direction
+  # is drawn per episode from the scenario seed (identical for every agent), so
+  # scenarios are not locked into a fixed head/following sea. Off in frozen v1.
   disturbed:
     environment:
       randomize: true
       max_random_current: 0.3
       wind_gust_accel: 0.03
       significant_wave_height: 1.25   # m; sea state ~3-4
-      wave_direction_deg: 0.0         # waves travel toward +x
   degraded:
     perception:
       enabled: true

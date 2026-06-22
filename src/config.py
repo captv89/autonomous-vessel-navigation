@@ -105,7 +105,9 @@ class EnvironmentConfig:
     # identical seaway per episode. Not modeled by the predictor's rollouts
     # (an unpredictable disturbance, like wind gusts).
     significant_wave_height: float = 0.0  # m, 0 disables sea state
-    wave_direction_deg: float = 0.0       # direction the waves travel TOWARD
+    wave_direction_deg: float = 0.0       # direction the waves travel TOWARD;
+    #                                     # ignored when randomize is on (the
+    #                                     # engine then draws it per scenario seed)
     wave_resistance_gain: float = 0.005   # speed loss (cells/s^2) per m^2 of Hs^2
     wave_motion_gain: float = 0.02        # yaw accel (rad/s^2) per m of wave amplitude
 

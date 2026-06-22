@@ -56,3 +56,25 @@ def test_timeout():
     engine = SimulationEngine(cfg, sc)
     _, result = run_constant(engine, 0.0, 0.0, 5000)
     assert result.done and result.outcome == "timeout"
+
+
+def test_wave_direction_randomized_per_seed():
+    # With a sea running and randomize on, the wave direction is drawn from the
+    # scenario seed: reproducible per seed, but different across seeds.
+    cfg = Config()
+    cfg.environment.randomize = True
+    cfg.environment.significant_wave_height = 1.5
+    a = SimulationEngine(cfg, build_scenario("open_water", seed=1)).wave_direction
+    a2 = SimulationEngine(cfg, build_scenario("open_water", seed=1)).wave_direction
+    b = SimulationEngine(cfg, build_scenario("open_water", seed=2)).wave_direction
+    assert a == a2          # deterministic per seed
+    assert a != b           # varies across seeds
+
+
+def test_wave_direction_fixed_without_randomize():
+    # Without randomize, the configured direction is used verbatim.
+    cfg = Config()
+    cfg.environment.significant_wave_height = 1.5
+    cfg.environment.wave_direction_deg = 90.0
+    eng = SimulationEngine(cfg, build_scenario("open_water", seed=1))
+    assert eng.wave_direction == np.radians(90.0)
