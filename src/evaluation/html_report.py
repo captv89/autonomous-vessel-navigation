@@ -336,7 +336,7 @@ def _compliance_cell(score: float, n: int) -> str:
             f'{score:.2f} <span class="ci">(n={n})</span></td>')
 
 
-def render_html(results: Dict[str, Any]) -> str:
+def render_html(results: Dict[str, Any], nav_link: str = "") -> str:
     suite = results["suite"]
     agents = results["agents"]
     conditions = list(suite["conditions"])
@@ -347,6 +347,7 @@ def render_html(results: Dict[str, Any]) -> str:
 <title>{suite['name']} v{suite['version']} — Leaderboard</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <h1>{suite['name']} <span style="color:var(--dim)">v{suite['version']}</span></h1>
+{nav_link}
 <p class="sub">{suite.get('description', '')}</p>
 <p>
 <span class="badge">generated {results['generated']}</span>
@@ -463,10 +464,10 @@ delta is the success-rate change vs baseline.</p>
 <div class="figs"><figure><figcaption>Success rate by condition</figcaption>
 {_svg_condition_dumbbell(first_cond_rank, conditions)}</figure></div>""")
 
-    parts.append("""<h2>Submit your model</h2>
+    parts.append(f"""<h2>Submit your model</h2>
 <p>Implement the <code>Agent</code> contract
 (<code>reset(obs)</code> / <code>decide(obs) → Decision</code>) and run:</p>
-<pre><code>python main.py benchmark --suite benchmarks/v1.yaml \\
+<pre><code>python main.py benchmark --suite benchmarks/v{suite['version']}.yaml \\
     --agent your_package.your_module:YourAgent</code></pre>
 <p>See the
 <a href="https://github.com/captv89/autonomous-vessel-navigation">repository</a>
@@ -478,16 +479,17 @@ navigation.</footer>
     return "".join(parts)
 
 
-def write_html(results_path: str | Path, out_path: str | Path) -> Path:
+def write_html(results_path: str | Path, out_path: str | Path,
+               nav_link: str = "") -> Path:
     results = json.loads(Path(results_path).read_text())
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render_html(results))
+    out.write_text(render_html(results, nav_link=nav_link))
     return out
 
 
 if __name__ == "__main__":
     import sys
-    src = sys.argv[1] if len(sys.argv) > 1 else "reports/benchmark-v1/results.json"
-    dst = sys.argv[2] if len(sys.argv) > 2 else "reports/benchmark-v1/index.html"
+    src = sys.argv[1] if len(sys.argv) > 1 else "reports/v1/benchmark-v1/results.json"
+    dst = sys.argv[2] if len(sys.argv) > 2 else "reports/v1/benchmark-v1/index.html"
     print(write_html(src, dst))

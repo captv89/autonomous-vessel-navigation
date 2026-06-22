@@ -31,7 +31,6 @@ data/
 output/
 logs/
 runs/
-reports/*/episodes/
 animations/
 models/*
 !models/ppo_vessel.zip
@@ -43,6 +42,20 @@ Thumbs.db
 PROJECT_STATUS.md
 .github/copilot-instructions.md
 
-reports/benchmark-v1-run13Jun
-reports/ppo_10m_bench
-reports/benchmark-v1-*
+# Reports — track only the canonical published leaderboards that the Pages
+# workflow reads (results.json + leaderboard.md for v1 and v2). Build output
+# (index.html), smoke runs, blog/in-house variants and per-episode logs are
+# all local-only.
+reports/*
+!reports/v1/
+!reports/v2/
+reports/v1/*
+reports/v2/*
+!reports/v1/benchmark-v1/
+!reports/v2/benchmark-v2/
+reports/v1/benchmark-v1/*
+reports/v2/benchmark-v2/*
+!reports/v1/benchmark-v1/results.json
+!reports/v1/benchmark-v1/leaderboard.md
+!reports/v2/benchmark-v2/results.json
+!reports/v2/benchmark-v2/leaderboard.md

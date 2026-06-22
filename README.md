@@ -43,7 +43,7 @@ per encounter type, and efficiency metrics with bootstrap CIs; every number
 is backed by a replayable episode log.
 
 Current leaderboard on
-[VesselNav-Bench v1](reports/benchmark-v1/leaderboard.md)
+[VesselNav-Bench v1](reports/v1/benchmark-v1/leaderboard.md)
 (9 scenarios x 20 seeded episodes per condition = 360 episodes per agent;
 calm condition shown):
 

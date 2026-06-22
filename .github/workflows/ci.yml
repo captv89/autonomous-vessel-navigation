@@ -30,3 +30,19 @@ jobs:
           run_benchmark(Config(), suite, ["classical"], "/tmp/bench")
           print(open("/tmp/bench/leaderboard.md").read())
           EOF
+      - name: Benchmark smoke v2 (sea state + TSS scoring)
+        run: |
+          uv run python - <<'EOF'
+          from src.config import Config
+          from src.evaluation.benchmark import run_benchmark
+          # Exercise the v2 code paths: the disturbed condition's sea state
+          # (G6, randomized wave direction) and Rule 10 / TSS scoring.
+          suite = {"name": "ci-v2-smoke", "version": 2, "description": "ci v2",
+                   "scenarios": ["crossing_starboard", "tss_crossing"],
+                   "episodes_per_scenario": 2, "base_seed": 1000,
+                   "conditions": {"disturbed": {"environment": {
+                       "randomize": True, "wind_gust_accel": 0.03,
+                       "significant_wave_height": 1.25}}}}
+          run_benchmark(Config(), suite, ["classical"], "/tmp/bench-v2")
+          print(open("/tmp/bench-v2/leaderboard.md").read())
+          EOF
