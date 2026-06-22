@@ -120,6 +120,8 @@ class SimulationEngine:
             heading=np.radians(sc.start_heading_deg),
             speed=0.5 * cfg.vessel.cruise_speed,
             current=self.current, wind_gust_accel=env.wind_gust_accel,
+            significant_wave_height=env.significant_wave_height,
+            wave_direction=np.radians(env.wave_direction_deg),
             rng=rng)
         self.traffic: DynamicObstacleManager = sc.make_traffic()
         self.collision_count = 0

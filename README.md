@@ -181,7 +181,15 @@ uv run python main.py benchmark --suite benchmarks/worlds.yaml \
 
 Benchmark conditions: **calm** (no disturbances) and **disturbed**
 (scenario-seeded random current up to 0.3 cells/s + wind gusts) — every
-agent faces the identical seeded episodes. The `benchmarks/v2.yaml` suite
+agent faces the identical seeded episodes. Under `benchmarks/v2.yaml` the
+**disturbed** condition also adds a **sea state** (gap G6, Hs 1.25 m, sea
+state ~3–4): the fossen3 model gains a mean speed loss from added resistance
+(scaling as Hs², worst in head/bow seas — STAwave-1) and a first-order yaw
+oscillation at the wave encounter frequency (modal frequency from a
+Pierson–Moskowitz sea), so course-keeping and COLREGs maneuvers face a real
+seaway. The wave phase is scenario-seeded, and the predictor's rollouts do
+not model it (an unpredictable disturbance, like the gusts). Off by default
+(Hs 0), so frozen v1 is unchanged. The `benchmarks/v2.yaml` suite
 adds a third, **degraded** condition: instead of AIS-grade ground truth, the
 perceived traffic carries scenario-seeded position/course/speed noise, a
 finite update interval (stale fixes on moving targets), and occasional target
@@ -292,7 +300,7 @@ main.py                 CLI: scenarios / simulate / train / evaluate /
                         benchmark / replay
 configs/default.yaml    every tunable parameter (YAML mirror of src/config.py)
 benchmarks/v1.yaml      frozen benchmark suite (scenarios, seeds, conditions)
-benchmarks/v2.yaml      v1 + degraded-perception, shoaling (depth/UKC), hull-randomized, and restricted-visibility (Rule 19) conditions
+benchmarks/v2.yaml      v1 + sea state in disturbed (waves, G6), degraded-perception, shoaling (depth/UKC), hull-randomized, and restricted-visibility (Rule 19) conditions
 benchmarks/worlds.yaml  example suite over the file-defined worlds in worlds/
 worlds/                 file-defined worlds (YAML scenarios): static_only,
                         dynamic_only, mixed

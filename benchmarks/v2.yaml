@@ -1,8 +1,10 @@
 # VesselNav-Bench v2
 #
 # Superset of v1: all v1 scenarios and seeds, plus two traffic-separation-scheme
-# scenarios (gap G9), a `degraded` condition (robustness to non-AIS-grade
-# perception), a `shoaling` condition (depth/under-keel-clearance instead of
+# scenarios (gap G9), a `disturbed` condition that now also adds a sea state
+# (waves: added resistance + first-order yaw, gap G6), a `degraded` condition
+# (robustness to non-AIS-grade perception), a `shoaling` condition
+# (depth/under-keel-clearance instead of
 # binary land, gap G7), a `hull_randomized` condition (own-ship model mismatch,
 # gap G11), and a `restricted_visibility` condition (Rule 19 scoring, gap G10).
 # v1 (benchmarks/v1.yaml) stays frozen so its published numbers remain
@@ -15,8 +17,8 @@ description: >
   Seeded navigation suite for comparing autonomous-vessel navigation
   policies under identical physics, scenarios, and scoring: canonical
   COLREGs encounters, coastal planning, and randomized worlds, in calm,
-  disturbed (current + wind gust), degraded-perception, and shoaling
-  (depth / under-keel clearance) conditions.
+  disturbed (current + wind gust + sea state), degraded-perception, and
+  shoaling (depth / under-keel clearance) conditions.
 
 episodes_per_scenario: 20
 base_seed: 1000
@@ -52,11 +54,19 @@ base:
 # isolate sensing robustness from environmental robustness.
 conditions:
   calm: {}
+  # `disturbed` is the environmental-robustness condition: scenario-seeded
+  # current + wind gusts, plus a moderate sea state (gap G6). The sea adds a
+  # mean speed loss from added resistance (worst in head/bow seas) and a
+  # first-order yaw oscillation at the wave encounter frequency, so course-
+  # keeping and COLREGs maneuvers face a realistic seaway. Hs ~ 1.25 m is a
+  # sea state ~3-4 (slight-to-moderate). Off in frozen v1.
   disturbed:
     environment:
       randomize: true
       max_random_current: 0.3
       wind_gust_accel: 0.03
+      significant_wave_height: 1.25   # m; sea state ~3-4
+      wave_direction_deg: 0.0         # waves travel toward +x
   degraded:
     perception:
       enabled: true

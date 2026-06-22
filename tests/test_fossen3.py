@@ -65,6 +65,63 @@ def test_gusts_are_seeded_deterministic():
     assert a.get_position() == b.get_position()
 
 
+def test_waves_off_by_default_match_calm():
+    # Hs = 0 must leave the dynamics identical to the no-wave model (frozen v1).
+    plain = make_ship()
+    waves_off = make_ship(significant_wave_height=0.0)
+    run(plain, 30, rudder=np.radians(10), speed=2.5)
+    run(waves_off, 30, rudder=np.radians(10), speed=2.5)
+    assert plain.get_position() == waves_off.get_position()
+    assert plain.get_speed() == waves_off.get_speed()
+
+
+def test_added_resistance_slows_in_head_sea():
+    # Head sea: waves travel toward -x (pi) while the ship heads +x (0) -> the
+    # added-resistance speed loss should hold the ship below its calm speed.
+    calm = make_ship()
+    head = make_ship(significant_wave_height=2.0, wave_direction=np.pi,
+                     rng=np.random.default_rng(1))
+    run(calm, 60, speed=2.5)
+    run(head, 60, speed=2.5)
+    assert head.get_speed() < calm.get_speed() - 0.05
+
+
+def test_head_sea_slows_more_than_following():
+    head = make_ship(significant_wave_height=2.0, wave_direction=np.pi,
+                     rng=np.random.default_rng(2))
+    following = make_ship(significant_wave_height=2.0, wave_direction=0.0,
+                          rng=np.random.default_rng(2))
+    run(head, 60, speed=2.5)
+    run(following, 60, speed=2.5)
+    # Following sea has ~no added resistance, so it stays faster.
+    assert following.get_speed() > head.get_speed() + 0.05
+
+
+def test_first_order_yaw_oscillates_in_beam_sea():
+    # Beam sea (waves abeam) with no rudder: heading should wander but stay
+    # bounded (zero-mean oscillation), not run away.
+    ship = make_ship(significant_wave_height=2.0, wave_direction=np.pi / 2,
+                     rng=np.random.default_rng(3))
+    headings = []
+    for _ in range(600):
+        ship.update(0.1, rudder_command=0.0, desired_speed=2.5)
+        headings.append(ship.get_heading())
+    headings = np.array(headings)
+    assert headings.std() > 1e-3            # waves do move the heading
+    assert np.abs(headings).max() < np.radians(30)  # but it stays bounded
+
+
+def test_waves_seeded_deterministic():
+    a = make_ship(significant_wave_height=2.0, wave_direction=np.pi / 3,
+                  rng=np.random.default_rng(11))
+    b = make_ship(significant_wave_height=2.0, wave_direction=np.pi / 3,
+                  rng=np.random.default_rng(11))
+    run(a, 30, rudder=np.radians(10), speed=2.5)
+    run(b, 30, rudder=np.radians(10), speed=2.5)
+    assert a.get_position() == b.get_position()
+    assert a.get_heading() == b.get_heading()
+
+
 def test_factory_selects_model():
     cfg = Config()
     cfg.vessel.model = "nomoto"

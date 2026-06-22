@@ -93,6 +93,21 @@ class EnvironmentConfig:
     wind_gust_accel: float = 0.0         # std of seeded gust accel (cells/s^2)
     randomize: bool = False              # scenario-seeded random current/gusts
     max_random_current: float = 0.3      # cells/s when randomize is on
+    # Sea state / waves (G6). Off by default (Hs = 0), so frozen v1 physics is
+    # unchanged. When significant_wave_height > 0 the fossen3 model adds two
+    # horizontal-plane effects, parameterized by wave height and direction:
+    #   * a mean speed loss from added resistance, scaling as Hs^2 and maximal
+    #     in head/bow seas (STAwave-1 functional form, ITTC 7.5-04-01-01.2);
+    #   * a first-order oscillatory yaw at the wave encounter frequency
+    #      w_e = |w0 - (w0^2/g) U cos(gamma)|, with the modal frequency taken
+    #     from a Pierson-Moskowitz sea w0 ~= 0.4*sqrt(g/Hs) (Fossen 2005).
+    # The oscillation phase is scenario-seeded, so every agent meets the
+    # identical seaway per episode. Not modeled by the predictor's rollouts
+    # (an unpredictable disturbance, like wind gusts).
+    significant_wave_height: float = 0.0  # m, 0 disables sea state
+    wave_direction_deg: float = 0.0       # direction the waves travel TOWARD
+    wave_resistance_gain: float = 0.005   # speed loss (cells/s^2) per m^2 of Hs^2
+    wave_motion_gain: float = 0.02        # yaw accel (rad/s^2) per m of wave amplitude
 
     def current_vector(self):
         rad = np.radians(self.current_direction_deg)
