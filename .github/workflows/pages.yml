@@ -38,10 +38,18 @@ jobs:
           python-version: "3.11"
       - name: Build leaderboard site (v2 main, v1 archived)
         run: |
-          PYTHONPATH=. python - <<'EOF'
-          import shutil
+          python - <<'EOF'
+          import importlib.util, shutil
           from pathlib import Path
-          from src.evaluation.html_report import write_html
+
+          # html_report is pure-stdlib; load it straight from its file so the
+          # import doesn't run src/evaluation/__init__.py, which pulls in
+          # numpy/torch/SB3 that this static-site job deliberately doesn't install.
+          spec = importlib.util.spec_from_file_location(
+              "html_report", "src/evaluation/html_report.py")
+          html_report = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(html_report)
+          write_html = html_report.write_html
 
           A = 'style="color:#5dd39e;text-decoration:none"'
           NAV_TO_V1 = f'<p style="margin:.2em 0 1.2em"><a {A} href="v1/">&rarr; VesselNav-Bench v1 (archived)</a></p>'
