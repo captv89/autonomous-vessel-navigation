@@ -11,7 +11,7 @@ on:
     branches: [main]
     paths:
       - "reports/v1/benchmark-v1/results.json"
-      - "reports/v2/benchmark-v2/results.json"
+      - "reports/v2/benchmark/results.json"
       - "src/evaluation/html_report.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
 
           site = Path("_site"); site.mkdir(exist_ok=True)
           v1 = Path("reports/v1/benchmark-v1")
-          v2 = Path("reports/v2/benchmark-v2")
+          v2 = Path("reports/v2/benchmark")
 
           if (v2 / "results.json").exists():
               # v2 is the main page, v1 archived under /v1/.

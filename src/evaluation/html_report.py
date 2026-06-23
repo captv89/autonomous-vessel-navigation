@@ -464,6 +464,39 @@ SCENARIO_INFO = {
     "random": ("Mixed", "Seeded random islands and wandering traffic"),
 }
 
+# One-line description of what each benchmark condition stresses, shown under
+# its heading. Sourced from the condition comments in benchmarks/v2.yaml.
+CONDITION_INFO = {
+    "calm": "Baseline physics — no current, wind, sea state or perception "
+            "noise. Isolates pure navigation and COLREGs skill and anchors "
+            "every robustness comparison.",
+    "disturbed": "Environmental robustness — scenario-seeded water current "
+                 "(up to 0.3 cells/s) and wind gusts, plus a moderate sea "
+                 "state (Hs ≈ 1.25 m, sea state 3–4) that adds speed loss "
+                 "from added resistance and a first-order yaw oscillation at "
+                 "the wave encounter frequency. Wave direction is drawn per "
+                 "episode.",
+    "degraded": "Perception robustness at AIS/GPS-grade sensing — noisy "
+                "target position (~12 m), course (6°) and speed, fixes only "
+                "every 4 s (staleness on moving targets) and occasional "
+                "target dropout. Physics stays calm to isolate sensing.",
+    "shoaling": "Depth instead of binary land — a charted depth field that "
+                "shoals toward shore, so grounding becomes depth < draft + "
+                "under-keel clearance. Coastal scenarios gain a realistic "
+                "shoal apron while open water stays deep.",
+    "hull_randomized": "Own-ship model mismatch — the hull's maneuvering "
+                       "parameters (Nomoto K/T and the 3-DOF constants) are "
+                       "jittered ±25% per episode while the controller still "
+                       "plans with the nominal model. Tests robustness to an "
+                       "imperfectly known ship.",
+    "restricted_visibility": "Fog / Rule 19 — radar-only perception (coarser "
+                             "noise, slower 6 s fixes, heavier dropout than "
+                             "degraded) and a scorer that drops the give-way / "
+                             "stand-on roles of Rules 14–17 for Rule 19: act "
+                             "in ample time, no turn to port for a vessel "
+                             "forward of the beam.",
+}
+
 VESSEL_MODEL_NOTE = (
     "All agents steer the same own-ship model: a 3-DOF surge–sway–yaw "
     "maneuvering model (first-order Nomoto yaw response, sideslip toward "
@@ -566,60 +599,68 @@ def _svg_safety_speed(agents_ranked, cond: str) -> str:
             f'{"".join(grid)}{"".join(dots)}{axis}</svg>')
 
 
-def _svg_radar(agents_ranked, cond: str, scenarios) -> str:
-    """Per-scenario success rate, one polygon per agent."""
-    import math
-    size, R = 460, 150
-    cx, cy = size / 2, size / 2 + 8
-    n_ax = len(scenarios)
+def _svg_heatmap(agents_ranked, cond: str, scenarios) -> str:
+    """Per-scenario success rate as a scenario x agent heatmap: each cell runs
+    red (low) -> amber -> green (high) with the exact rate printed, so a single
+    weak scenario stands out where overlapping radar polygons used to hide it."""
+    label_w, col_w, row_h, head_h = 168, 150, 32, 34
+    n = len(agents_ranked)
+    width = label_w + col_w * n
+    leg_h = 40
+    height = head_h + row_h * len(scenarios) + leg_h
 
-    def point(axis: int, frac: float):
-        ang = -math.pi / 2 + 2 * math.pi * axis / n_ax
-        return (cx + R * frac * math.cos(ang),
-                cy + R * frac * math.sin(ang))
+    def ramp(frac):  # same red->amber->green ramp as _compliance_cell
+        r = int(217 - frac * (217 - 63))
+        g = int(83 + frac * (168 - 83))
+        b = int(79 + frac * 37)
+        return r, g, b
 
-    grid = []
-    for ring in (0.25, 0.5, 0.75, 1.0):
-        pts = " ".join(f"{point(i, ring)[0]:.0f},{point(i, ring)[1]:.0f}"
-                       for i in range(n_ax))
-        grid.append(f'<polygon points="{pts}" fill="none" '
-                    f'stroke="#243149" stroke-width="1"/>')
-    labels = []
-    for i, name in enumerate(scenarios):
-        lx, ly = point(i, 1.22)
-        anchor = ("middle" if abs(lx - cx) < 30
-                  else "start" if lx > cx else "end")
-        labels.append(f'<text x="{lx:.0f}" y="{ly:.0f}" '
-                      f'text-anchor="{anchor}" fill="#9aa3b2" '
-                      f'font-size="11">{name.replace("_", " ")}</text>')
-        ax_x, ax_y = point(i, 1.0)
-        grid.append(f'<line x1="{cx}" y1="{cy}" x2="{ax_x:.0f}" '
-                    f'y2="{ax_y:.0f}" stroke="#243149" stroke-width="1"/>')
-
-    polys, legend = [], []
+    parts = []
+    # Column headers: agent names, in podium rank order.
     for k, agent in enumerate(agents_ranked):
-        episodes = agent["conditions"][cond]["episodes"]
-        color = AGENT_COLORS[k % len(AGENT_COLORS)]
-        fracs = []
-        for name in scenarios:
-            eps = [e for e in episodes if e["scenario"] == name]
-            fracs.append(sum(1 for e in eps if e.get("success"))
-                         / max(len(eps), 1))
-        pts = " ".join(f"{point(i, f)[0]:.0f},{point(i, f)[1]:.0f}"
-                       for i, f in enumerate(fracs))
-        polys.append(f'<polygon points="{pts}" fill="{color}" '
-                     f'fill-opacity="0.10" stroke="{color}" '
-                     f'stroke-width="2"><title>{agent["name"]}</title>'
-                     f'</polygon>')
-        ly = 14 + k * 17
-        legend.append(f'<rect x="6" y="{ly - 9}" width="11" height="11" '
-                      f'rx="2" fill="{color}"/>'
-                      f'<text x="22" y="{ly + 1}" fill="#e8ebf0" '
-                      f'font-size="11.5">{agent["name"]}</text>')
-    return (f'<svg viewBox="0 0 {size} {size}" role="img" '
+        x = label_w + col_w * k + col_w / 2
+        parts.append(f'<text x="{x:.0f}" y="22" text-anchor="middle" '
+                     f'fill="#e8ebf0" font-size="13" font-weight="600">'
+                     f'{agent["name"]}</text>')
+    # One row per scenario.
+    for i, name in enumerate(scenarios):
+        y = head_h + i * row_h
+        cy = y + row_h / 2 + 4
+        parts.append(f'<text x="{label_w - 12}" y="{cy:.0f}" '
+                     f'text-anchor="end" fill="#c4cbd6" font-size="12.5">'
+                     f'{name.replace("_", " ")}</text>')
+        for k, agent in enumerate(agents_ranked):
+            eps = [e for e in agent["conditions"][cond]["episodes"]
+                   if e["scenario"] == name]
+            frac = sum(1 for e in eps if e.get("success")) / max(len(eps), 1)
+            r, g, b = ramp(frac)
+            x = label_w + col_w * k
+            parts.append(
+                f'<rect x="{x + 4}" y="{y + 3}" width="{col_w - 8}" '
+                f'height="{row_h - 6}" rx="5" fill="rgb({r},{g},{b})" '
+                f'fill-opacity="0.9"><title>{agent["name"]} · '
+                f'{name.replace("_", " ")}: {frac:.0%} '
+                f'({len(eps)} episodes)</title></rect>'
+                f'<text x="{x + col_w / 2:.0f}" y="{cy:.0f}" '
+                f'text-anchor="middle" fill="#0d1320" font-size="12.5" '
+                f'font-weight="700">{frac:.0%}</text>')
+    # Gradient scale legend, bottom-left under the scenario labels.
+    gid = f"hmgrad-{cond}"
+    ly = head_h + row_h * len(scenarios) + 22
+    stops = "".join(
+        f'<stop offset="{o:.0%}" stop-color="rgb{ramp(o)}"/>'
+        for o in (0.0, 0.5, 1.0))
+    parts.append(
+        f'<defs><linearGradient id="{gid}">{stops}</linearGradient></defs>'
+        f'<rect x="{label_w}" y="{ly - 11}" width="150" height="12" rx="3" '
+        f'fill="url(#{gid})"/>'
+        f'<text x="{label_w - 6}" y="{ly}" text-anchor="end" fill="#9aa3b2" '
+        f'font-size="11">0%</text>'
+        f'<text x="{label_w + 156}" y="{ly}" fill="#9aa3b2" '
+        f'font-size="11">100% success</text>')
+    return (f'<svg viewBox="0 0 {width} {height}" role="img" '
             f'aria-label="Per-scenario success rate by agent">'
-            f'{"".join(grid)}{"".join(labels)}{"".join(polys)}'
-            f'{"".join(legend)}</svg>')
+            f'{"".join(parts)}</svg>')
 
 
 def _svg_condition_dumbbell(agents_ranked, conditions) -> str:
@@ -712,11 +753,19 @@ def _hero(suite: Dict[str, Any], agents: Dict[str, Any],
         '</section>')
 
 
-def _podium(agents: Dict[str, Any], cond: str) -> str:
-    """Top-3 glass podium for a condition, built from the same ranked data the
-    leaderboard table uses (gold centered and lifted, silver left, bronze right)."""
+def _overall_score(agent: Dict[str, Any], conditions) -> float:
+    """An agent's overall rating: the unweighted mean of its benchmark score
+    across every condition. Conditions carry the same episode count, so equal
+    weighting is the balanced-suite convention and rewards all-round skill."""
+    scores = [agent["conditions"][c]["benchmark_score"] for c in conditions]
+    return sum(scores) / len(scores)
+
+
+def _podium(agents: Dict[str, Any], conditions) -> str:
+    """Top-3 glass podium ranked by overall score across all conditions
+    (gold centered and lifted, silver left, bronze right)."""
     ranked = sorted(agents.values(),
-                    key=lambda a: a["conditions"][cond]["benchmark_score"],
+                    key=lambda a: _overall_score(a, conditions),
                     reverse=True)[:3]
     klass = ["gold", "silver", "bronze"]
     medal = ["1", "2", "3"]
@@ -726,17 +775,22 @@ def _podium(agents: Dict[str, Any], cond: str) -> str:
         if v >= len(ranked):
             continue
         agent = ranked[v]
-        c = agent["conditions"][cond]
+        overall = _overall_score(agent, conditions)
+        mean_success = (sum(agent["conditions"][c]["success"]["rate"]
+                            for c in conditions) / len(conditions))
         cards.append(
             f'<div class="pcard {klass[v]}">'
             f'<div class="pmedal">{medal[v]}</div>'
             f'<div class="pname">{agent["name"]}</div>'
-            f'<div class="pscore">{c["benchmark_score"]}</div>'
-            f'<div class="plabel">benchmark score</div>'
-            f'<div class="psub">{c["success"]["rate"]:.0%} success · '
-            f'{cond}</div></div>')
+            f'<div class="pscore">{overall:.1f}</div>'
+            f'<div class="plabel">overall score</div>'
+            f'<div class="psub">{mean_success:.0%} mean success · '
+            f'{len(conditions)} conditions</div></div>')
     return (f'<section id="leaderboard" class="podium-wrap">'
-            f'<h2>Podium — {cond}</h2>'
+            f'<h2>Podium — Overall</h2>'
+            f'<p class="sub">Ranked by the unweighted mean benchmark score '
+            f'across all {len(conditions)} conditions (each carries the same '
+            f'episode count), so all-round competence wins.</p>'
             f'<div class="podium">{"".join(cards)}</div></section>')
 
 
@@ -761,6 +815,7 @@ def render_html(results: Dict[str, Any], nav_link: str = "") -> str:
 <span class="badge">{len(suite['scenarios'])} scenarios ×
 {suite['episodes_per_scenario']} seeded episodes × {len(conditions)}
 conditions</span>
+<span class="badge">config hash per condition (physics fingerprint, not a seed):</span>
 {''.join(f'<span class="badge">{c}: <code>{h}</code></span>'
          for c, h in results['config_hash'].items())}
 </p>
@@ -796,8 +851,8 @@ with identical config hashes.</div>"""]
 random current (up to 0.3 cells/s) and wind gusts. Every agent faces the
 identical episodes.</p>""")
 
-    # Top-3 podium for the first condition, doubling as the scroll-cue anchor.
-    parts.append(_podium(agents, conditions[0]))
+    # Top-3 overall podium, doubling as the scroll-cue anchor.
+    parts.append(_podium(agents, conditions))
 
     for cond in conditions:
         ranked = sorted(agents.values(),
@@ -842,7 +897,10 @@ identical episodes.</p>""")
             enc_rows.append(f"<tr><td class='agent'>{agent['name']}</td>"
                             f"{cells}</tr>")
 
+        cond_desc = CONDITION_INFO.get(cond, "")
+        cond_desc_html = f'<p class="sub">{cond_desc}</p>' if cond_desc else ""
         parts.append(f"""<h2>Condition: {cond}</h2>
+{cond_desc_html}
 <div class="tablewrap">
 <table><thead><tr><th>#</th><th>Agent</th><th>Score</th><th>Success</th>
 <th>Collision</th><th>Grounding</th><th>COLREGs</th>
@@ -853,8 +911,8 @@ identical episodes.</p>""")
 {_svg_outcome_bars(ranked, cond)}</figure>
 <figure><figcaption>Safety vs speed trade-off</figcaption>
 {_svg_safety_speed(ranked, cond)}</figure>
-<figure><figcaption>Success rate by scenario</figcaption>
-{_svg_radar(ranked, cond, suite['scenarios'])}</figure>
+<figure style="flex-basis:100%"><figcaption>Success rate by scenario</figcaption>
+{_svg_heatmap(ranked, cond, suite['scenarios'])}</figure>
 </div>
 <h3 style="color:var(--dim)">COLREGs compliance by encounter type</h3>
 <div class="tablewrap">

@@ -52,10 +52,10 @@ reports/*
 reports/v1/*
 reports/v2/*
 !reports/v1/benchmark-v1/
-!reports/v2/benchmark-v2/
+!reports/v2/benchmark/
 reports/v1/benchmark-v1/*
-reports/v2/benchmark-v2/*
+reports/v2/benchmark/*
 !reports/v1/benchmark-v1/results.json
 !reports/v1/benchmark-v1/leaderboard.md
-!reports/v2/benchmark-v2/results.json
-!reports/v2/benchmark-v2/leaderboard.md
+!reports/v2/benchmark/results.json
+!reports/v2/benchmark/leaderboard.md

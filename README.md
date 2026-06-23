@@ -23,6 +23,16 @@ visibility into every decision any approach makes.
 
 **▶ Live leaderboard: https://captv89.github.io/autonomous-vessel-navigation/**
 
+The Pages leaderboard opens with a cinematic 3D ocean hero (an animated sea
+with a vessel tracing a course), rendered via `three.js` loaded from a pinned,
+SRI-verified CDN build. It is purely presentational — every leaderboard number
+is rendered straight from `results.json`. If the CDN or WebGL is unavailable,
+or JavaScript is disabled, the hero falls back to a static ocean gradient and
+the full leaderboard still renders. Below the hero it leads with an **overall
+podium** — agents ranked by the unweighted mean of their benchmark score across
+every condition — followed by a per-condition breakdown, each headed by a short
+note on what that condition stresses.
+
 ```bash
 # Score any agent on the benchmark and get a ranked leaderboard
 # (--workers N runs agent/condition blocks in parallel across N cores)
