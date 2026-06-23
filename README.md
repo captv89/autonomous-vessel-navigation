@@ -134,6 +134,10 @@ uv run python main.py evaluate --agents classical,mpc,rl --model models/ppo_vess
 `--render` opens the pygame viewer (live); `replay` opens any recorded
 episode with pause/step/speed controls and a decision-inspector panel.
 
+> **Platform note:** the project pins `torch>=2.6` (for security fixes), and
+> PyTorch no longer ships macOS-Intel (x86_64) wheels. Use Linux, Windows, or
+> Apple-Silicon macOS for `uv sync` / training. The CI runs on Linux.
+
 ### Side-by-side comparison animations
 
 `scripts/make_comparison_animation.py` renders two episode logs (same scenario
