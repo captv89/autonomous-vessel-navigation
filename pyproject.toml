@@ -14,12 +14,19 @@ dependencies = [
     "pyyaml>=6.0",
     "scipy>=1.11",
     "stable-baselines3>=2.4,<2.5",
-    "torch>=2.0,<2.3",
+    "torch>=2.6",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+]
+
+[tool.uv]
+# Security floor for a transitive dependency (pulled in via matplotlib).
+# Pillow < 12.2.0 has several CVEs (OOB write, decompression bomb, DoS).
+constraint-dependencies = [
+    "pillow>=12.2.0",
 ]
 
 [tool.pytest.ini_options]
