@@ -14,6 +14,7 @@ pygame viewer all drive the exact same physics.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,7 +24,8 @@ import numpy as np
 from src.config import Config
 from src.environment.grid_world import GridWorld
 from src.environment.dynamic_obstacles import DynamicObstacleManager
-from src.vessel.dynamics import make_vessel
+from src.vessel.dynamics import make_vessel, sample_hull
+from src.sim.reactive_traffic import steer_reactive_traffic
 from src.sim.scenarios import Scenario
 
 logger = logging.getLogger(__name__)
@@ -92,18 +94,44 @@ class SimulationEngine:
             direction = rng.uniform(-np.pi, np.pi)
             self.current = (float(speed * np.cos(direction)),
                             float(speed * np.sin(direction)))
+            # Sea state (G6): with a sea running, the wave direction is also
+            # drawn from the scenario seed (the height stays as configured), so
+            # an episode is not locked into a fixed head/following sea. Guarded
+            # by Hs > 0 so the RNG stream — and thus frozen runs without waves —
+            # is byte-identical to before when no sea state is configured.
+            if env.significant_wave_height > 0.0:
+                self.wave_direction = float(rng.uniform(-np.pi, np.pi))
+            else:
+                self.wave_direction = np.radians(env.wave_direction_deg)
         else:
             cur = env.current_vector()
             self.current = (float(cur[0]), float(cur[1]))
+            self.wave_direction = np.radians(env.wave_direction_deg)
+
+        # Own-ship hull randomization (G11): jitter the maneuvering parameters
+        # per episode from a stream independent of the disturbance RNG, so
+        # current/gust realizations are unchanged whether or not this is on.
+        # The vessel is built from the jittered config; everything else (the
+        # autopilot, the avoider's rollouts) keeps the nominal config, so the
+        # controller plans against a plant it does not know exactly.
+        veh_cfg = cfg
+        self.hull_params: Dict[str, float] = {}
+        if cfg.vessel.randomize_hull:
+            seed = sc.seed if sc.seed is not None else 0
+            hull_rng = np.random.default_rng(seed + 7919)
+            jittered, self.hull_params = sample_hull(cfg.vessel, hull_rng)
+            veh_cfg = dataclasses.replace(cfg, vessel=jittered)
 
         # Depart at half cruise speed: vessels align with their route before
         # coming up to speed, which keeps the initial turn transient from
         # building large cross-track error (same condition for all agents).
         self.vessel = make_vessel(
-            cfg, x=float(sc.start[0]), y=float(sc.start[1]),
+            veh_cfg, x=float(sc.start[0]), y=float(sc.start[1]),
             heading=np.radians(sc.start_heading_deg),
             speed=0.5 * cfg.vessel.cruise_speed,
             current=self.current, wind_gust_accel=env.wind_gust_accel,
+            significant_wave_height=env.significant_wave_height,
+            wave_direction=self.wave_direction,
             rng=rng)
         self.traffic: DynamicObstacleManager = sc.make_traffic()
         self.collision_count = 0
@@ -151,6 +179,7 @@ class SimulationEngine:
         # Falls back to heading when nearly stationary (course undefined).
         psi = self.vessel.get_heading()
         u = self.vessel.get_speed()
+        own_x, own_y = self.vessel.get_position()
         sway = getattr(self.vessel, "get_sway", lambda: 0.0)()
         vx = u * np.cos(psi) - sway * np.sin(psi) + self.current[0]
         vy = u * np.sin(psi) + sway * np.cos(psi) + self.current[1]
@@ -165,6 +194,12 @@ class SimulationEngine:
 
         self.vessel.update(dt, rudder_command=rudder_command,
                            desired_speed=desired_speed)
+        # Reactive (give-way) targets steer off the pre-step world snapshot
+        # before they integrate; non-reactive traffic is untouched.
+        steer_reactive_traffic(
+            self.traffic,
+            {"id": -1, "x": own_x, "y": own_y, "heading": psi, "speed": u},
+            cfg, dt)
         self.traffic.update_all(dt)
         # Traffic drifts with the same water current as the own ship.
         if self.current != (0.0, 0.0):

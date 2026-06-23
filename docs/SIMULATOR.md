@@ -26,13 +26,19 @@ episode, `environment.*`) that carries the own ship *and* all traffic, plus
 random wind-gust forces. No waves, no shallow-water effects, no tide.
 
 **Other ships.** Traffic vessels follow fixed behaviors — straight line,
-waypoint circuit, or circle — and drift with the same current. They do
-**not** react to you: they are stand-on vessels that never give way (see
-gap G1).
+waypoint circuit, or circle — and drift with the same current. By default
+they do **not** react to you: they are stand-on vessels that never give way.
+A target can optionally be made *reactive* (`compliance: compliant | partial`),
+in which case it takes its own starboard give-way action when it is the
+give-way vessel — a benchmark-v2 capability (gap G1) kept off in the frozen
+v1 exam.
 
-**The chart.** A grid: each cell is water or land. Land is land — there is
-no depth, no draft, no under-keel clearance (gap G7). Leaving the mapped
-area counts as a navigational failure.
+**The chart.** A grid: each cell is water or land. Land is land — by default
+there is no depth, no draft, no under-keel clearance. Benchmark v2 adds an
+opt-in depth chart (gap G7, the `shoaling` condition): water shoals toward
+land and grounding becomes "charted depth < draft + UKC margin", with binary
+land/water as the special case (depth 0 vs deep). Leaving the mapped area
+counts as a navigational failure.
 
 **What an agent perceives.** Ground truth: exact own-ship state, exact
 position/course/speed of every traffic vessel (as if from perfect AIS),
@@ -61,17 +67,17 @@ codebase.
 
 | # | Feature | Common in literature | Ours today | Impact | Effort |
 |---|---------|---------------------|------------|--------|--------|
-| G1 | **Reactive / rule-compliant traffic** (target ships that give way, or behave imperfectly) | Mixed; strong papers test against both compliant and rogue targets | Constant-behavior traffic only | **High** — stand-on scenarios (Rule 17) are only half-tested when the other ship never acts; multi-ship realism limited | Medium — a traffic behavior layer can reuse the classical avoider |
+| G1 | **Reactive / rule-compliant traffic** (target ships that give way, or behave imperfectly) | Mixed; strong papers test against both compliant and rogue targets | ✅ Addressed for v2: per-vessel `compliance` (none/rogue, compliant, partial) — give-way targets take starboard action (`src/sim/reactive_traffic.py`); off in frozen v1 | **High** — stand-on scenarios (Rule 17) are only half-tested when the other ship never acts; multi-ship realism limited | Medium — a traffic behavior layer can reuse the classical avoider |
 | G2 | **Imazu problem set** (22 canonical 1-4-ship encounter geometries used across Japanese/Korean COLREGs-DRL papers) | Frequent as a standard exam | Our own 9 scenarios | **High** for comparability — citing Imazu results lets readers cross-reference decades of literature | Low — pure scenario definitions |
-| G3 | **Sensor realism** (position/course noise, AIS update intervals, radar dropouts, partial observability) | Common in sim2real-oriented work; Gaussian-noise digital twins | Perfect ground-truth observation | **High** for any robustness/sim2real claim; Medium for pure algorithm comparison | Medium — noise + latency model in one place (the `Observation` builder), benchmark as a third condition |
-| G4 | **Ship domain** (asymmetric safety zone — more clearance ahead than astern, e.g. Fujii/Goodwin) | Standard in compliance evaluation papers | Circular safe distance | Medium — affects who "passed too close"; mariners think in domains, not circles | Low-Medium — swap the distance test in scoring + avoidance |
-| G5 | **Speed actions for RL** (engine orders as part of the action space) | Usual | RL steers only; classical/MPC do modulate speed | Medium — slight structural handicap for the learned baseline | Low — config flag + retrain |
-| G6 | **Waves / sea state** (1st-order motions, added resistance) | Sometimes (3-DOF+ environments) | Not modeled | Low for decision-level benchmarking; matters for control-level studies | High |
-| G7 | **Depth / draft** (charted depths, under-keel clearance instead of binary land) | Rare in DRL papers, real for mariners | Binary land/water | Medium for coastal realism | Medium — grid becomes a depth field |
+| G3 | **Sensor realism** (position/course noise, AIS update intervals, radar dropouts, partial observability) | Common in sim2real-oriented work; Gaussian-noise digital twins | ✅ Addressed for v2: seeded perception model (`src/sim/perception.py`) degrades *perceived traffic* — Gaussian position/course/speed noise, update-interval staleness, target dropout — at the shared observation funnel, so all agents see the same noise; ground truth still drives scoring. Shipped as the `degraded` condition in `benchmarks/v2.yaml`; off in frozen v1 | **High** for any robustness/sim2real claim; Medium for pure algorithm comparison | Medium — noise + latency model in one place, benchmark as a third condition |
+| G4 | **Ship domain** (asymmetric safety zone — more clearance ahead than astern, e.g. Fujii/Goodwin) | Standard in compliance evaluation papers | ✅ Addressed for v2: four-quadrant Goodwin domain (`src/sim/ship_domain.py`) shared by the COLREGs passing-distance scorer *and* the predictive avoider's separation check; circular is the default special case, so frozen v1 is unchanged. Enabled in `benchmarks/v2.yaml` (fore 1.5× / aft 0.5× / stbd 1.2× / port 0.8× safe distance) | Medium — affects who "passed too close"; mariners think in domains, not circles | Low-Medium — swap the distance test in scoring + avoidance |
+| G5 | **Speed actions for RL** (engine orders as part of the action space) | Usual | ✅ Addressed: `rl.action_mode: steer_speed` (default) gives the policy a compound `MultiDiscrete([heading, speed])` action — `speed_factors` × `cruise_speed` ([1.0, 0.75, 0.5]) — so it modulates engine orders like the classical/MPC baselines; `steer_only` keeps the heading-only space for ablation. The reward decomposition is unchanged (no new term: slowing trades against progress/time as it does for the other agents). A new `steer_speed` model still needs training + benchmarking to land the final numbers | Medium — slight structural handicap for the learned baseline | Low — config flag + retrain |
+| G6 | **Waves / sea state** (1st-order motions, added resistance) | Sometimes (3-DOF+ environments) | ✅ Addressed for v2: an opt-in sea state on the fossen3 model (`src/vessel/dynamics.py`), parameterized by significant wave height & direction. Two horizontal-plane effects: a mean speed loss from added resistance scaling as Hs² and maximal in head/bow seas (STAwave-1 functional form, ITTC 7.5-04-01-01.2), and a first-order yaw oscillation at the wave encounter frequency `ω_e = \|ω₀ − (ω₀²/g)·U·cos γ\|` with the modal frequency from a Pierson–Moskowitz sea `ω₀ ≈ 0.4·√(g/Hs)` (Fossen 2005). The phase is scenario-seeded (identical seaway per agent/episode) and, when the disturbances are randomized, so is the wave direction — drawn per episode from the scenario seed, so a scenario is not locked into one fixed head/following sea. The predictor's rollouts exclude the sea state, like wind gusts. Off by default (Hs = 0, frozen v1 unchanged); folded into the `disturbed` condition in `benchmarks/v2.yaml` (Hs 1.25 m, sea state ~3–4). A wave observation channel and heave/pitch/roll (no vertical DOF) are out of scope for decision-level benchmarking | Low for decision-level benchmarking; matters for control-level studies | High |
+| G7 | **Depth / draft** (charted depths, under-keel clearance instead of binary land) | Rare in DRL papers, real for mariners | ✅ Addressed for v2: opt-in depth field (`world.depth_model: shoaling`) that shoals toward land (`src/environment/grid_world.py: apply_shoaling_depth`); grounding becomes *charted depth < draft + UKC margin* and sub-clearance water folds into the no-go chart, so grounding, planning, and lidar all respect the shoal apron. Binary land/water is the default special case (frozen v1 unchanged); shipped as the `shoaling` condition in `benchmarks/v2.yaml` (draft 2.0 m, UKC 0.5 m). Depth contours in the viewer and a depth observation channel are deferred follow-ups | Medium for coastal realism | Medium — grid becomes a depth field |
 | G8 | **AIS-replay scenarios** (encounters mined from real traffic data) | Emerging best practice for test generation | Synthetic scenarios only | Medium-High for external validity | High — data sourcing + map alignment |
-| G9 | **Traffic separation schemes / Rule 10** (lanes, crossing them at right angles) | Rare | Not modeled | Medium — distinctive scenario type | Low-Medium once G7-style charts exist |
-| G10 | **Restricted visibility / Rule 19** | Rare | Not modeled | Low-Medium; requires G3 first | Low after G3 |
-| G11 | **Hull parameter randomization** (own-ship variety) | Common as domain randomization | Config-selectable but fixed per run | Low-Medium | Low — randomize K/T per episode like the current |
+| G9 | **Traffic separation schemes / Rule 10** (lanes, crossing them at right angles) | Rare | ✅ Addressed for v2: a `TSScheme` chart overlay (`src/sim/scenarios.py`) with two opposed lanes and a central separation zone, plus `tss_transit` and `tss_crossing` scenarios; the COLREGs scorer gains Rule 10 terms (`score_tss`: crossing-angle near 90°, with-the-flow lane use, and zone keep-clear) that activate only when a scenario declares a scheme. The separation zone is a soft scored region, not a wall (a crossing vessel may transit it). Added to `benchmarks/v2.yaml` | Medium — distinctive scenario type | Low-Medium once G7-style charts exist |
+| G10 | **Restricted visibility / Rule 19** | Rare | ✅ Addressed for v2: a `restricted_visibility` condition in `benchmarks/v2.yaml` that pairs radar-only perception (sparser fixes / heavier dropout than `degraded`, building on G3) with a scorer that drops the give-way/stand-on roles of Rules 14-17 in favour of Rule 19 (`colregs.py: score_episode(restricted_visibility=True)`) — action in ample time and, for a target forward of the beam, no alteration to port (Rule 19(d)(i)). Off in frozen v1 | Low-Medium; requires G3 first | Low after G3 |
+| G11 | **Hull parameter randomization** (own-ship variety) | Common as domain randomization | ✅ Addressed for v2: opt-in per-episode jitter of the own-ship maneuvering parameters (K, T + the 3-DOF dynamics constants) from an independent scenario-seeded stream (`vessel.randomize_hull` / `hull_jitter`, `src/vessel/dynamics.py: sample_hull`). The controller still plans with the nominal model, so it faces a plant it does not know exactly. Shipped as the `hull_randomized` condition; off per run by default (frozen v1 unchanged) | Low-Medium | Low — randomize K/T per episode like the current |
 
 **What we already match or exceed:** Gymnasium API, lidar-style
 rangefinders, stochastic seeded environments, current disturbance, full
@@ -82,7 +88,10 @@ quantitative per-rule COLREGs scoring.
 
 **Recommended order for benchmark v2:** G2 (cheap credibility) → G1 (the
 single biggest realism gap) → G3 as a third benchmark condition
-("degraded perception") → G4 → G5. G6-G11 are roadmap items.
+("degraded perception") → G4 → G5 → G7 → G9 → G11 → G10 → G6 (sea state,
+folded into `disturbed`). G8 (AIS-replay) is the one remaining gap, tracked
+on its own as a help-wanted item — it needs an external dataset and a
+licensing decision rather than more simulator work.
 
 ---
 
@@ -110,7 +119,17 @@ below are worth more than features:
    clusters, a TSS crossing, pilot boarding areas, anchored vessels
    swinging, a stand-on vessel that fails to act until in extremis?
 5. **The ship domain shape (G4).** How much more clearance ahead than
-   abeam/astern would you score against?
+   abeam/astern would you score against? *v2 currently uses a Goodwin-style
+   domain — fore 1.5× / aft 0.5× / starboard 1.2× / port 0.8× the safe
+   distance (`benchmarks/v2.yaml`, `ship_domain`). Are those ratios right
+   for this vessel class, and should they shrink in the narrow channel?*
+6. **Depth, draft and under-keel clearance (G7).** *v2's `shoaling`
+   condition grounds the ship when charted depth < draft + UKC margin, and
+   shoals water toward land at `shoal_slope` m of depth per m of distance
+   (`benchmarks/v2.yaml`, `world`). For this ~30 m craft it uses draft 2.0 m,
+   UKC 0.5 m, and a 0.25 m/m slope (~10 m no-go apron, deepening to 20 m).
+   Are those draft/clearance numbers right, and is a uniform shoaling slope a
+   fair stand-in for charted bathymetry?*
 
 Open an issue (or annotate this file) with anything the sea says and the
 simulation doesn't.

@@ -25,6 +25,7 @@ import numpy as np
 
 from src.config import Config
 from src.environment.grid_world import GridWorld
+from src.sim.ship_domain import domain_distance
 from src.vessel.dynamics import make_vessel
 
 # Steering callback: position -> desired heading (None = keep last)
@@ -48,6 +49,10 @@ class CandidateResult:
     heading: Optional[float] = None       # None for the track candidate
     offset_deg: Optional[float] = None
     reject_reason: str = ""
+    # Deepest ship-domain intrusion over the rollout (range / domain radius);
+    # >= 1.0 means the target stayed outside the domain. Equals
+    # min_separation / safe_distance when the domain is circular.
+    min_domain: float = float("inf")
 
     def to_record(self) -> Dict[str, Any]:
         return {
@@ -80,10 +85,21 @@ class PredictiveAvoider:
         self.offsets_deg = offsets_deg or list(DEFAULT_OFFSETS_DEG)
         av = config.avoidance
         self.safe_distance = av.safe_distance
+        # Same ship-domain shape the COLREGs scorer judges with, scaled to the
+        # avoider's safe distance (circular by default => legacy behavior).
+        self.domain = config.ship_domain
         self.horizon = av.time_horizon              # rollout length (s)
         self.rollout_dt = 0.5
         self.replan_interval = 1.0                  # s between re-evaluations
         self.land_buffer = 2.0                      # cells of clearance to land
+        # Maneuvering timescale: ~time to turn 90 deg (yaw lag + slew to a
+        # quarter circle). Static hazards count as "imminent" within this
+        # window, so the grace scales with the vessel dynamics instead of
+        # being a constant tuned for one speed.
+        vc = config.vessel
+        self.maneuver_time = float(np.clip(
+            vc.nomoto_T + (np.pi / 2.0) / max(vc.nomoto_K * vc.max_rudder, 1e-3),
+            15.0, self.horizon))
         self.current = (0.0, 0.0)                   # drift estimate for rollouts
         # Shield mode: also guard against land/boundaries when no traffic
         # is present (the classical agent's planner makes that redundant,
@@ -135,7 +151,8 @@ class PredictiveAvoider:
         # may exit the (finite) world long after traffic is cleared, because
         # by then the ship will be back on route.
         max_tcpa = self._max_positive_tcpa(vessel_state, obstacles)
-        oob_grace = float(np.clip(max_tcpa + 10.0, 15.0, self.horizon))
+        oob_grace = float(np.clip(max_tcpa + 10.0, self.maneuver_time,
+                                  self.horizon))
 
         def track_rollout() -> CandidateResult:
             # For the engage/resume decision, static hazards (land, world
@@ -146,8 +163,8 @@ class PredictiveAvoider:
             steer = track_steerer() if track_steerer else None
             result = self._rollout(vessel_state, obstacles,
                                    target_heading=track_heading,
-                                   steer_fn=steer, oob_grace=20.0,
-                                   land_grace=20.0)
+                                   steer_fn=steer, oob_grace=self.maneuver_time,
+                                   land_grace=self.maneuver_time)
             result.label = "track"
             return result
 
@@ -161,8 +178,7 @@ class PredictiveAvoider:
             if self.engage_without_traffic:
                 track_ok = track_result.safe
             else:
-                track_ok = (track_result.min_separation
-                            >= self.safe_distance)
+                track_ok = track_result.min_domain >= 1.0
             if track_ok:
                 return AvoidanceDecision(
                     active=False,
@@ -316,6 +332,7 @@ class PredictiveAvoider:
 
         target = target_heading
         min_sep = float("inf")
+        min_domain = float("inf")
         hazard_time = float("inf")
         hits_land = leaves_world = False
         for i in range(1, n + 1):
@@ -340,21 +357,26 @@ class PredictiveAvoider:
                 hits_land = t < land_grace
                 hazard_time = t
                 break
+            heading = model.get_heading()
             for ob in obstacles:
                 ox = ob["x"] + ob["speed"] * np.cos(ob["heading"]) * t
                 oy = ob["y"] + ob["speed"] * np.sin(ob["heading"]) * t
                 min_sep = min(min_sep, float(np.hypot(ox - x, oy - y)))
+                min_domain = min(min_domain, domain_distance(
+                    x, y, heading, ox, oy, self.safe_distance, self.domain))
 
-        safe = (not hits_land and not leaves_world
-                and min_sep >= self.safe_distance)
+        # Safety is judged against the ship domain (>= 1.0 = outside it); for a
+        # circular domain this is exactly min_sep >= safe_distance.
+        safe = (not hits_land and not leaves_world and min_domain >= 1.0)
         reject = ("hits land" if hits_land
                   else "leaves world" if leaves_world
-                  else f"miss {min_sep:.1f} < {self.safe_distance:.1f}"
-                  if min_sep < self.safe_distance else "")
+                  else f"domain breach (miss {min_sep:.1f}, dom {min_domain:.2f})"
+                  if min_domain < 1.0 else "")
         return CandidateResult(label="", heading=target_heading,
                                min_separation=min_sep, hits_land=hits_land,
                                leaves_world=leaves_world, safe=safe,
-                               hazard_time=hazard_time, reject_reason=reject)
+                               hazard_time=hazard_time, reject_reason=reject,
+                               min_domain=min_domain)
 
     def _near_land(self, x: float, y: float) -> bool:
         gx, gy = int(x), int(y)

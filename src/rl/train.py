@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections import deque
 from pathlib import Path
 
 from src.config import Config
@@ -39,6 +40,42 @@ def make_env_fn(config: Config, scenario: str, rank: int, base_seed: int):
                            seed=base_seed + rank)
         return Monitor(env, info_keywords=("outcome",))
     return _init
+
+
+def _make_outcome_callback(window: int = 200):
+    """Callback logging success/grounding/collision rates over recent episodes.
+
+    PPO already logs `rollout/ep_rew_mean`; this adds the outcome rates the
+    blog's training curves need (success and grounding vs timesteps), computed
+    over a rolling window of the last `window` finished episodes. Recorded on
+    every rollout end so they land in every configured logger output (TB + CSV).
+    """
+    from stable_baselines3.common.callbacks import BaseCallback
+
+    class OutcomeRateCallback(BaseCallback):
+        def __init__(self):
+            super().__init__()
+            self.outcomes: deque = deque(maxlen=window)
+
+        def _on_step(self) -> bool:
+            for info in self.locals.get("infos", []):
+                # Monitor adds the "episode" key only on episode termination.
+                if "episode" in info and "outcome" in info:
+                    self.outcomes.append(info["outcome"])
+            return True
+
+        def _on_rollout_end(self) -> None:
+            if not self.outcomes:
+                return
+            n = len(self.outcomes)
+            for name, key in (("success_rate", "goal"),
+                              ("grounding_rate", "grounding"),
+                              ("collision_rate", "collision"),
+                              ("timeout_rate", "timeout")):
+                rate = sum(1 for o in self.outcomes if o == key) / n
+                self.logger.record(f"rollout/{name}", rate)
+
+    return OutcomeRateCallback()
 
 
 def train(config: Config, total_timesteps: int, scenario: str,
@@ -100,10 +137,22 @@ def train(config: Config, total_timesteps: int, scenario: str,
             device="cpu",
             tensorboard_log=tb_log)
 
+    # Stream metrics to a timestamped run dir in both TensorBoard and CSV, so
+    # the training curves can be reconstructed from `progress.csv` even without
+    # TensorBoard installed (parsed by scripts/make_training_curves.py).
+    from datetime import datetime
+    from stable_baselines3.common.logger import configure
+    run_dir = log_dir / f"ppo_{datetime.now():%Y%m%d_%H%M%S}"
+    formats = ["stdout", "csv"] + (["tensorboard"] if tb_log else [])
+    model.set_logger(configure(str(run_dir), formats))
+    logger.info("Logging training metrics to %s (%s)", run_dir,
+                ", ".join(formats))
+
     logger.info("Training PPO for %d timesteps on scenario '%s' (%d envs)%s",
                 total_timesteps, scenario, n_envs,
                 f" (finetuning from {finetune})" if finetune else "")
-    model.learn(total_timesteps=total_timesteps, progress_bar=False)
+    model.learn(total_timesteps=total_timesteps, progress_bar=False,
+                callback=_make_outcome_callback())
 
     model.save(out)
     vec_env.save(str(out.with_suffix(".vecnorm")))

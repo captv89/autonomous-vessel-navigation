@@ -1,0 +1,27 @@
+# Combined world: static landmasses + moving traffic + a sea current.
+# Distinct geometry from the benchmark `coastal` map (not a copy) so it can be
+# used freely for demos and custom benchmarking without touching the exam suite.
+name: mixed
+description: "Coastal channel with landmasses, two traffic vessels, and a current."
+start: [8, 12]
+start_heading_deg: 75
+goal: [92, 88]
+
+rect_obstacles:
+  - [28, 0, 12, 42]
+  - [58, 58, 14, 42]
+circle_obstacles:
+  - [72, 32, 7]
+  - [22, 68, 6]
+
+traffic:
+  - {x: 85, y: 60, heading_deg: -130, speed: 0.4}
+  - {x: 45, y: 35, heading_deg: 60, speed: 0.3, behavior: waypoint,
+     waypoints: [[50, 50], [45, 65], [30, 55], [45, 35]]}
+seed: null
+
+# Optional config overrides applied for this world in `simulate`.
+# (current flows TOWARD current_direction_deg; fossen3 dynamics only.)
+environment:
+  current_speed: 0.25
+  current_direction_deg: 90

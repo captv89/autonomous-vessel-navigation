@@ -1,0 +1,112 @@
+# VesselNav-Bench v2
+#
+# Superset of v1: all v1 scenarios and seeds, plus two traffic-separation-scheme
+# scenarios (gap G9), a `disturbed` condition that now also adds a sea state
+# (waves: added resistance + first-order yaw, gap G6), a `degraded` condition
+# (robustness to non-AIS-grade perception), a `shoaling` condition
+# (depth/under-keel-clearance instead of
+# binary land, gap G7), a `hull_randomized` condition (own-ship model mismatch,
+# gap G11), and a `restricted_visibility` condition (Rule 19 scoring, gap G10).
+# v1 (benchmarks/v1.yaml) stays frozen so its published numbers remain
+# comparable; v2 is the suite to report new perception-robustness results on.
+# The runner records the SHA-256 of each condition's resolved physics config,
+# so numbers are only comparable between runs with matching hashes.
+name: vesselnav-bench
+version: 2
+description: >
+  Seeded navigation suite for comparing autonomous-vessel navigation
+  policies under identical physics, scenarios, and scoring: canonical
+  COLREGs encounters, coastal planning, and randomized worlds, in calm,
+  disturbed (current + wind gust + sea state), degraded-perception, and
+  shoaling (depth / under-keel clearance) conditions.
+
+episodes_per_scenario: 20
+base_seed: 1000
+
+scenarios:
+  - open_water
+  - head_on
+  - crossing_starboard
+  - crossing_port
+  - overtaking
+  - coastal
+  - multi_vessel
+  - narrow_channel
+  - tss_transit
+  - tss_crossing
+  - random
+
+# Suite-wide config override, applied under every condition below. v2 scores
+# passing distance against an asymmetric ship domain (Fujii/Goodwin) instead
+# of a bare circle: more clearance ahead than astern, biased to starboard.
+# Multipliers are of the scorer's safe distance; all 1.0 would be circular.
+base:
+  ship_domain:
+    fore: 1.5
+    aft: 0.5
+    starboard: 1.2
+    port: 0.8
+
+# Each condition is a (partial) config override applied on top of the
+# benchmark's base config. Disturbances and perception noise are
+# scenario-seeded, so every agent experiences the identical realization per
+# episode. `degraded` keeps calm physics and degrades only perception, to
+# isolate sensing robustness from environmental robustness.
+conditions:
+  calm: {}
+  # `disturbed` is the environmental-robustness condition: scenario-seeded
+  # current + wind gusts, plus a moderate sea state (gap G6). The sea adds a
+  # mean speed loss from added resistance (worst in head/bow seas) and a
+  # first-order yaw oscillation at the wave encounter frequency, so course-
+  # keeping and COLREGs maneuvers face a realistic seaway. Hs ~ 1.25 m is a
+  # sea state ~3-4 (slight-to-moderate). With randomize on, the wave direction
+  # is drawn per episode from the scenario seed (identical for every agent), so
+  # scenarios are not locked into a fixed head/following sea. Off in frozen v1.
+  disturbed:
+    environment:
+      randomize: true
+      max_random_current: 0.3
+      wind_gust_accel: 0.03
+      significant_wave_height: 1.25   # m; sea state ~3-4
+  degraded:
+    perception:
+      enabled: true
+      position_noise: 1.2        # cells (~12 m at cell_size 10 m), AIS/GPS-grade
+      course_noise_deg: 6.0
+      speed_noise: 0.05          # cells/s (~0.5 m/s, ~1 kn)
+      update_interval: 4.0       # s between fixes (staleness on moving targets)
+      dropout_prob: 0.05         # occasional target loss per fix
+  # `shoaling` keeps calm physics and replaces binary land with a depth field
+  # that shoals toward shore (gap G7): grounding becomes depth < draft + UKC,
+  # and sub-clearance water joins the no-go chart, so coastal scenarios gain a
+  # realistic shoal apron while open-water scenarios are unchanged (all deep).
+  shoaling:
+    world:
+      depth_model: shoaling
+      ukc_margin: 0.5            # m of clearance required under the keel
+      deep_depth: 20.0          # m; charted depth far from land
+      shoal_slope: 0.25         # m of depth per m from land (~10 m no-go apron;
+                                # keeps the frozen coastal channel navigable)
+  # `hull_randomized` keeps calm physics but jitters the own-ship maneuvering
+  # parameters (Nomoto K/T + the 3-DOF dynamics constants) per episode by
+  # +/-25% (gap G11). The realization is scenario-seeded, so every agent faces
+  # the identical hull per (scenario, seed); the controller still plans with
+  # the nominal model, so this measures robustness to own-ship model mismatch.
+  hull_randomized:
+    vessel:
+      randomize_hull: true
+      hull_jitter: 0.25
+  # `restricted_visibility` models navigation in fog (Rule 19, gap G10): radar-
+  # only perception (sparser fixes, more dropout, larger noise than `degraded`)
+  # and a scorer that drops the give-way/stand-on roles of Rules 14-17 in favour
+  # of Rule 19 (action in ample time; no alteration to port for a vessel forward
+  # of the beam). Scenario-seeded, so every agent sees the identical realization.
+  restricted_visibility:
+    perception:
+      enabled: true
+      restricted_visibility: true
+      position_noise: 2.0        # cells (~20 m); radar-only, coarser than AIS
+      course_noise_deg: 10.0
+      speed_noise: 0.08          # cells/s
+      update_interval: 6.0       # s between fixes (slow radar plot)
+      dropout_prob: 0.10         # heavier target loss in clutter

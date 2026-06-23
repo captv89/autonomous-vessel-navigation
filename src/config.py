@@ -21,7 +21,7 @@ import yaml
 @dataclass
 class SimulationConfig:
     dt: float = 0.1                      # integration timestep (s)
-    max_duration: float = 600.0          # episode timeout (s)
+    max_duration: float = 1200.0         # episode timeout (s)
     goal_tolerance: float = 5.0          # distance considered "arrived" (cells)
     collision_radius: float = 2.0        # vessel-to-vessel collision distance (cells)
     terminate_on_collision: bool = True
@@ -33,15 +33,30 @@ class WorldConfig:
     width: int = 100                     # grid cells
     height: int = 100
     cell_size: float = 10.0              # meters per cell (for reporting only)
+    # Depth / under-keel clearance (G7). "none" keeps the binary land/water
+    # chart (frozen v1); "shoaling" synthesizes a depth field that shoals
+    # toward land (depth = min(deep_depth, shoal_slope * metres_from_land)),
+    # and folds sub-clearance water (depth < vessel.draft + ukc_margin) into
+    # the no-go grid so grounding, planning, and lidar all respect it.
+    depth_model: str = "none"            # "none" | "shoaling"
+    ukc_margin: float = 0.5              # m of clearance required under the keel
+    deep_depth: float = 20.0             # m; charted depth far from land
+    shoal_slope: float = 0.25            # m of depth gained per m from land
+    #                                    # (~10 m no-go apron; keeps the frozen
+    #                                    # coastal channel navigable)
 
 
 @dataclass
 class VesselConfig:
+    # Defaults model a ~30 m small craft to scale (cell_size = 10 m):
+    #   cruise 0.5 cells/s = 5 m/s ~= 9.7 kn; max 0.8 = 8 m/s ~= 15.6 kn.
+    #   K=0.12 with 35 deg rudder => ~4.2 deg/s steady yaw, turn radius
+    #   ~6.8 cells (~68 m, ~2.3 ship lengths) — realistic for the platform.
     model: str = "fossen3"               # "fossen3" (3-DOF) or "nomoto"
-    cruise_speed: float = 2.5            # cells/s (world is 100 cells across)
-    max_speed: float = 4.0
-    nomoto_K: float = 0.4                # yaw gain (1/s per rad of rudder)
-    nomoto_T: float = 4.0                # yaw time constant (s)
+    cruise_speed: float = 0.5            # cells/s (cell_size m each)
+    max_speed: float = 0.8
+    nomoto_K: float = 0.12               # yaw gain (1/s per rad of rudder)
+    nomoto_T: float = 3.0                # yaw time constant (s)
     max_rudder_deg: float = 35.0         # IMO standard
     rudder_rate_deg: float = 70.0 / 11.0 # IMO: 70 deg in 11 s
     # fossen3-only parameters
@@ -49,6 +64,17 @@ class VesselConfig:
     sideslip_gain: float = 1.2           # v_steady = -gain * u * r
     turn_speed_loss: float = 0.4         # u_dot -= loss * |r| * u
     surge_time_constant: float = 4.0     # s, speed response
+    draft: float = 2.0                   # m; under-keel clearance grounding (G7)
+    # Own-ship hull randomization (G11). Off by default so the frozen physics
+    # is unchanged. When on, the maneuvering parameters (K, T and the fossen3
+    # dynamics constants) are scaled per episode by a factor drawn uniformly
+    # from [1 - hull_jitter, 1 + hull_jitter], from an independent
+    # scenario-seeded stream — standard domain randomization for own-ship
+    # variety / sim-to-real transfer. The controller still plans with the
+    # nominal values (see make_vessel callers), so the agent faces a plant it
+    # does not know exactly.
+    randomize_hull: bool = False
+    hull_jitter: float = 0.25            # +/- fraction on each hull parameter
 
     @property
     def max_rudder(self) -> float:
@@ -67,6 +93,23 @@ class EnvironmentConfig:
     wind_gust_accel: float = 0.0         # std of seeded gust accel (cells/s^2)
     randomize: bool = False              # scenario-seeded random current/gusts
     max_random_current: float = 0.3      # cells/s when randomize is on
+    # Sea state / waves (G6). Off by default (Hs = 0), so frozen v1 physics is
+    # unchanged. When significant_wave_height > 0 the fossen3 model adds two
+    # horizontal-plane effects, parameterized by wave height and direction:
+    #   * a mean speed loss from added resistance, scaling as Hs^2 and maximal
+    #     in head/bow seas (STAwave-1 functional form, ITTC 7.5-04-01-01.2);
+    #   * a first-order oscillatory yaw at the wave encounter frequency
+    #      w_e = |w0 - (w0^2/g) U cos(gamma)|, with the modal frequency taken
+    #     from a Pierson-Moskowitz sea w0 ~= 0.4*sqrt(g/Hs) (Fossen 2005).
+    # The oscillation phase is scenario-seeded, so every agent meets the
+    # identical seaway per episode. Not modeled by the predictor's rollouts
+    # (an unpredictable disturbance, like wind gusts).
+    significant_wave_height: float = 0.0  # m, 0 disables sea state
+    wave_direction_deg: float = 0.0       # direction the waves travel TOWARD;
+    #                                     # ignored when randomize is on (the
+    #                                     # engine then draws it per scenario seed)
+    wave_resistance_gain: float = 0.005   # speed loss (cells/s^2) per m^2 of Hs^2
+    wave_motion_gain: float = 0.02        # yaw accel (rad/s^2) per m of wave amplitude
 
     def current_vector(self):
         rad = np.radians(self.current_direction_deg)
@@ -75,16 +118,56 @@ class EnvironmentConfig:
 
 
 @dataclass
+class ShipDomain:
+    """Asymmetric ship domain (Fujii/Goodwin) as multiples of the safe
+    distance, per quadrant of own-ship heading. All 1.0 (the default) is the
+    circular special case, so frozen v1 scoring is unchanged. Used by the
+    COLREGs scorer's passing-distance test (and, later, the avoider) so
+    "passed too close" reflects the domain mariners keep, not a bare circle.
+    """
+    fore: float = 1.0                    # clearance ahead
+    aft: float = 1.0                     # clearance astern
+    starboard: float = 1.0               # clearance to starboard
+    port: float = 1.0                    # clearance to port
+
+
+@dataclass
+class PerceptionConfig:
+    """Degraded-perception model applied to *perceived traffic* only.
+
+    Off by default, so the agent sees ground-truth targets (AIS-grade). The
+    benchmark's `degraded` condition turns it on to measure robustness to
+    realistic sensing: Gaussian position/course/speed noise, finite update
+    interval (staleness on moving targets), and occasional target loss.
+    Own-ship state, the goal, and land/lidar are never perturbed here.
+    """
+    enabled: bool = False
+    position_noise: float = 0.0          # std of Gaussian noise on target x,y (cells)
+    course_noise_deg: float = 0.0        # std on target heading (deg)
+    speed_noise: float = 0.0             # std on target speed (cells/s)
+    update_interval: float = 0.0         # s between target fixes (0 = every step)
+    dropout_prob: float = 0.0            # per-target chance of momentary loss per fix
+    # Restricted visibility (Rule 19, G10). When on, the COLREGs scorer drops
+    # the give-way/stand-on roles of Rules 14-17 and scores every encounter
+    # under Rule 19 instead (action in ample time; avoid altering to port for a
+    # vessel forward of the beam). Pair with degraded perception above to model
+    # sensing in fog. Off by default, so frozen scoring is unchanged.
+    restricted_visibility: bool = False
+
+
+@dataclass
 class ControlConfig:
     """PD autopilot mapping desired heading -> rudder command."""
     heading_kp: float = 1.0
     heading_kd: float = 1.5
-    # Slow down in large course changes (good seamanship; reduces drift):
-    # speed factor ramps from 1.0 at slowdown_start_deg to min_speed_factor
-    # at slowdown_full_deg of heading error.
+    # Optional speed reduction in large course changes. Disabled by default
+    # (min_speed_factor = 1.0): real practice is to alter COURSE, not speed
+    # (COLREGs Rule 8), and turn anticipation removes the drift this used to
+    # compensate for. Set min_speed_factor < 1.0 to re-enable the ramp from
+    # 1.0 at slowdown_start_deg to min_speed_factor at slowdown_full_deg.
     slowdown_start_deg: float = 15.0
     slowdown_full_deg: float = 60.0
-    min_speed_factor: float = 0.3
+    min_speed_factor: float = 1.0
 
 
 @dataclass
@@ -96,9 +179,14 @@ class PlannerConfig:
 @dataclass
 class FollowerConfig:
     type: str = "ilos"                   # "ilos" or "pure_pursuit"
-    lookahead: float = 18.0
+    lookahead: float = 10.0
     path_tolerance: float = 4.0
     integral_gain: float = 0.5
+    # Turn anticipation (wheel-over): switch to the next leg R*tan(dPsi/2)
+    # before a waypoint so the ship begins its alteration in advance and the
+    # turn circle fits the corner, instead of overshooting. Set to the vessel
+    # turn radius in cells; 0 disables (legacy switch-at-waypoint behavior).
+    turn_radius: float = 7.0
 
 
 @dataclass
@@ -135,6 +223,13 @@ class RLConfig:
     n_tracked_obstacles: int = 3         # nearest dynamic obstacles in observation
     heading_actions_deg: List[float] = field(
         default_factory=lambda: [-30.0, -15.0, -5.0, 0.0, 5.0, 15.0, 30.0])
+    # G5: speed (engine-order) actions. "steer_speed" gives the policy a
+    # compound (heading, speed) action so it can modulate speed like the
+    # classical/MPC baselines; "steer_only" keeps the original heading-only
+    # action space for ablation. speed_factors multiply vessel.cruise_speed.
+    action_mode: str = "steer_speed"     # "steer_speed" | "steer_only"
+    speed_factors: List[float] = field(
+        default_factory=lambda: [1.0, 0.75, 0.5])
     reward: RewardConfig = field(default_factory=RewardConfig)
 
 
@@ -159,10 +254,12 @@ class Config:
     world: WorldConfig = field(default_factory=WorldConfig)
     vessel: VesselConfig = field(default_factory=VesselConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    perception: PerceptionConfig = field(default_factory=PerceptionConfig)
     control: ControlConfig = field(default_factory=ControlConfig)
     planner: PlannerConfig = field(default_factory=PlannerConfig)
     follower: FollowerConfig = field(default_factory=FollowerConfig)
     avoidance: AvoidanceConfig = field(default_factory=AvoidanceConfig)
+    ship_domain: ShipDomain = field(default_factory=ShipDomain)
     rl: RLConfig = field(default_factory=RLConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
 
@@ -190,10 +287,10 @@ class Config:
         sections = {
             "simulation": SimulationConfig, "world": WorldConfig,
             "vessel": VesselConfig, "environment": EnvironmentConfig,
-            "control": ControlConfig,
+            "perception": PerceptionConfig, "control": ControlConfig,
             "planner": PlannerConfig, "follower": FollowerConfig,
-            "avoidance": AvoidanceConfig, "rl": RLConfig,
-            "training": TrainingConfig,
+            "avoidance": AvoidanceConfig, "ship_domain": ShipDomain,
+            "rl": RLConfig, "training": TrainingConfig,
         }
         kwargs = {name: build(t, data.get(name)) for name, t in sections.items()}
         return cls(**kwargs)

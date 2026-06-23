@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional
 from src.config import Config
 from src.agents.base import Agent
 from src.sim.engine import SimulationEngine
+from src.sim.perception import Perception
 from src.sim.scenarios import Scenario, build_scenario
 from src.sim.recorder import EpisodeRecorder
 from src.evaluation.metrics import compute_metrics, aggregate
@@ -43,14 +44,19 @@ def run_episode(config: Config, scenario: Scenario, agent: Agent,
     """
     engine = SimulationEngine(config, scenario)
     obs = engine.reset()
-    agent.reset(obs)
+    # The agent decides on perceived traffic (degraded under the matching
+    # condition); the recorder below always logs the engine's ground truth, so
+    # scoring stays physically correct regardless of perception.
+    perception = Perception(config, scenario.seed)
+    percept = perception.perceive(obs)
+    agent.reset(percept)
 
     with EpisodeRecorder(log_path) as rec:
         rec.header(scenario=scenario.to_dict(), agent=agent.metadata(),
                    config=config.to_dict())
         outcome = "timeout"
         while True:
-            decision = agent.decide(obs)
+            decision = agent.decide(percept)
             result = engine.step(decision.desired_heading,
                                  decision.desired_speed)
             rec.step(t=result.obs.t, vessel=result.obs.vessel,
@@ -64,6 +70,7 @@ def run_episode(config: Config, scenario: Scenario, agent: Agent,
             if result.done:
                 outcome = result.outcome
                 break
+            percept = perception.perceive(obs)
 
         steps = [r for r in rec.records if r["type"] == "step"]
         metrics = compute_metrics(

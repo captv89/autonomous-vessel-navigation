@@ -40,8 +40,16 @@ class VesselNavEnv(gym.Env):
         self.builder = ObservationBuilder(self.config)
         self.heading_actions = [np.radians(a)
                                 for a in self.config.rl.heading_actions_deg]
-
-        self.action_space = spaces.Discrete(len(self.heading_actions))
+        self.speed_factors = list(self.config.rl.speed_factors)
+        # G5: a compound (heading, speed) action lets the policy modulate speed
+        # like the classical/MPC baselines. "steer_only" keeps the heading-only
+        # space (speed pinned to cruise) for ablation.
+        self.steer_speed = self.config.rl.action_mode == "steer_speed"
+        if self.steer_speed:
+            self.action_space = spaces.MultiDiscrete(
+                [len(self.heading_actions), len(self.speed_factors)])
+        else:
+            self.action_space = spaces.Discrete(len(self.heading_actions))
         self.observation_space = spaces.Box(
             low=-1.0, high=1.0, shape=(self.builder.size,), dtype=np.float32)
 
@@ -68,13 +76,18 @@ class VesselNavEnv(gym.Env):
         self._prev_goal_distance = obs.distance_to_goal
         return self.builder.build(obs), {"scenario_seed": scenario_seed}
 
-    def step(self, action: int
+    def step(self, action
              ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """One decision = `rl.action_repeat` engine steps holding the same
-        helm order (rewards accumulate across the held steps)."""
+        helm order (rewards accumulate across the held steps).
+
+        `action` is a heading index in steer-only mode, or a
+        ``[heading_idx, speed_idx]`` pair in steer+speed mode (G5)."""
         obs_before = self.engine.observe()
-        heading_change = self.heading_actions[int(action)]
+        heading_idx, speed_factor = self._decode_action(action)
+        heading_change = self.heading_actions[heading_idx]
         desired_heading = obs_before.vessel["heading"] + heading_change
+        desired_speed = self.config.vessel.cruise_speed * speed_factor
 
         reward_parts: Dict[str, float] = {
             "heading_change":
@@ -82,8 +95,7 @@ class VesselNavEnv(gym.Env):
                 * abs(heading_change)}
         events: List[str] = []
         for _ in range(max(self.config.rl.action_repeat, 1)):
-            result = self.engine.step(desired_heading,
-                                      self.config.vessel.cruise_speed)
+            result = self.engine.step(desired_heading, desired_speed)
             events.extend(result.events)
             for key, val in self._reward(result.obs, result).items():
                 reward_parts[key] = reward_parts.get(key, 0.0) + val
@@ -114,6 +126,13 @@ class VesselNavEnv(gym.Env):
         if result.done:
             info["is_success"] = result.outcome == OUTCOME_GOAL
         return (obs_vec, reward, terminated, truncated, info)
+
+    def _decode_action(self, action) -> Tuple[int, float]:
+        """Return (heading_index, speed_factor) for either action space."""
+        if self.steer_speed:
+            heading_idx, speed_idx = (int(action[0]), int(action[1]))
+            return heading_idx, self.speed_factors[speed_idx]
+        return int(action), 1.0
 
     # ---------------------------------------------------------------- reward
 

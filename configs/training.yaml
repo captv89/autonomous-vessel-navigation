@@ -4,6 +4,10 @@ environment:
   randomize: true
   max_random_current: 0.3
   wind_gust_accel: 0.03
+  # Sea state (G6). With randomize on, the wave direction is drawn per episode
+  # from the scenario seed, so the agent trains across head / beam / following
+  # seas instead of one fixed angle (the wave height stays fixed here).
+  significant_wave_height: 1.25
 training:
   # Procedural-only pool (no fixed benchmark geometries -> no test leakage).
   # Even thirds: random_encounter (COLREGs give-way), random (open obstacle

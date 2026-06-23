@@ -1,0 +1,19 @@
+# Static-obstacle world: sail SW -> NE around landmasses and islets.
+# No traffic — exercises the global planner (A*) and path follower only.
+name: static_only
+description: "Static landmasses and islets only; route from SW to NE around them."
+start: [10, 10]
+start_heading_deg: 45
+goal: [90, 90]
+
+# rect_obstacles: [x, y, width, height]   (grid cells)
+rect_obstacles:
+  - [25, 50, 18, 32]
+  - [55, 16, 18, 28]
+# circle_obstacles: [cx, cy, radius]
+circle_obstacles:
+  - [78, 60, 7]
+  - [24, 28, 6]
+
+traffic: []
+seed: null

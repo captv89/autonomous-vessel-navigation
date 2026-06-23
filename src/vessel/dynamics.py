@@ -22,12 +22,35 @@ Every consumer (engine, avoidance rollouts) constructs vessels through
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, Tuple
+import dataclasses
+from typing import Dict, Optional, Protocol, Tuple
 
 import numpy as np
 
-from src.config import Config
+from src.config import Config, VesselConfig
 from src.vessel.vessel_model import NomotoVessel
+
+
+# Maneuvering parameters jittered by hull randomization (G11). The Nomoto
+# channel (K, T) is shared by both models; the rest are fossen3-only but
+# scaling them when the nomoto model is selected is harmless.
+HULL_RANDOM_PARAMS = ("nomoto_K", "nomoto_T", "sway_time_constant",
+                      "sideslip_gain", "turn_speed_loss",
+                      "surge_time_constant")
+
+
+def sample_hull(vc: VesselConfig,
+                rng: np.random.Generator) -> Tuple[VesselConfig, Dict[str, float]]:
+    """Return a per-episode VesselConfig with jittered hull parameters.
+
+    Each parameter in HULL_RANDOM_PARAMS is scaled by an independent factor
+    drawn uniformly from [1 - hull_jitter, 1 + hull_jitter]. Deterministic
+    given `rng`; the sampled values are returned for logging/inspection.
+    """
+    j = vc.hull_jitter
+    sampled = {name: float(getattr(vc, name) * rng.uniform(1.0 - j, 1.0 + j))
+               for name in HULL_RANDOM_PARAMS}
+    return dataclasses.replace(vc, **sampled), sampled
 
 
 class VesselDynamics(Protocol):
@@ -64,6 +87,11 @@ class Fossen3DOFVessel:
                  surge_time_constant: float = 4.0,
                  current: Tuple[float, float] = (0.0, 0.0),
                  wind_gust_accel: float = 0.0,
+                 significant_wave_height: float = 0.0,
+                 wave_direction: float = 0.0,
+                 wave_resistance_gain: float = 0.005,
+                 wave_motion_gain: float = 0.02,
+                 cell_size: float = 10.0,
                  rng: Optional[np.random.Generator] = None):
         self.x, self.y, self.psi = float(x), float(y), float(heading)
         self.u, self.v, self.r = float(speed), 0.0, 0.0
@@ -78,6 +106,22 @@ class Fossen3DOFVessel:
         self.current = (float(current[0]), float(current[1]))
         self.wind_gust_accel = wind_gust_accel
         self.rng = rng or np.random.default_rng(0)
+
+        # Sea state (G6): mean added resistance + first-order yaw at the wave
+        # encounter frequency. Derived once per episode from Hs.
+        self.Hs = float(significant_wave_height)
+        self.wave_dir = float(wave_direction)
+        self.k_aw = wave_resistance_gain
+        self.k_wave = wave_motion_gain
+        self.cell_size = cell_size
+        self._t = 0.0
+        if self.Hs > 0.0:
+            g = 9.81
+            self.wave_w0 = 0.4 * np.sqrt(g / self.Hs)  # PM modal frequency
+            self.wave_phase = float(self.rng.uniform(0.0, 2.0 * np.pi))
+        else:
+            self.wave_w0 = 0.0
+            self.wave_phase = 0.0
 
         self.rudder_command = 0.0
         self.rudder_angle = 0.0
@@ -116,6 +160,25 @@ class Fossen3DOFVessel:
             self.u = float(np.clip(self.u + gu * dt, 0.0, self.max_speed))
             self.v += gv * dt
 
+        # Sea state (G6): added resistance + first-order wave-induced yaw.
+        # gamma is the ship heading relative to the wave travel direction
+        # (0 = following sea, pi = head sea).
+        if self.Hs > 0.0:
+            self._t += dt
+            gamma = self.psi - self.wave_dir
+            head_factor = 0.5 * (1.0 - np.cos(gamma))       # 0 following, 1 head
+            # Added resistance: mean speed loss ~ Hs^2, maximal in head seas
+            # (STAwave-1 functional form).
+            self.u -= self.k_aw * self.Hs * self.Hs * head_factor * dt
+            self.u = float(np.clip(self.u, 0.0, self.max_speed))
+            # First-order yaw at the encounter frequency (Fossen). Amplitude
+            # scales with wave amplitude (~Hs/2) and peaks in beam/quartering
+            # seas; ~0 in pure head/following seas by symmetry.
+            u_ms = self.u * self.cell_size
+            w_e = abs(self.wave_w0 - self.wave_w0 ** 2 / 9.81 * u_ms * np.cos(gamma))
+            yaw_amp = self.k_wave * 0.5 * self.Hs * abs(np.sin(gamma))
+            self.r += yaw_amp * np.sin(w_e * self._t + self.wave_phase) * dt
+
         # Kinematics (body -> world) + current drift
         self.psi += self.r * dt
         self.psi = float(np.arctan2(np.sin(self.psi), np.cos(self.psi)))
@@ -150,6 +213,8 @@ class Fossen3DOFVessel:
 def make_vessel(config: Config, *, x: float, y: float, heading: float,
                 speed: float, current: Tuple[float, float] = (0.0, 0.0),
                 wind_gust_accel: float = 0.0,
+                significant_wave_height: float = 0.0,
+                wave_direction: float = 0.0,
                 rng: Optional[np.random.Generator] = None) -> VesselDynamics:
     """Single construction point for own-ship dynamics (engine + rollouts)."""
     vc = config.vessel
@@ -159,6 +224,7 @@ def make_vessel(config: Config, *, x: float, y: float, heading: float,
                             T=vc.nomoto_T, max_rudder=vc.max_rudder,
                             rudder_rate=vc.rudder_rate)
     if vc.model == "fossen3":
+        env = config.environment
         return Fossen3DOFVessel(
             x, y, heading, speed,
             max_speed=vc.max_speed, K=vc.nomoto_K, T=vc.nomoto_T,
@@ -167,6 +233,11 @@ def make_vessel(config: Config, *, x: float, y: float, heading: float,
             sideslip_gain=vc.sideslip_gain,
             turn_speed_loss=vc.turn_speed_loss,
             surge_time_constant=vc.surge_time_constant,
-            current=current, wind_gust_accel=wind_gust_accel, rng=rng)
+            current=current, wind_gust_accel=wind_gust_accel,
+            significant_wave_height=significant_wave_height,
+            wave_direction=wave_direction,
+            wave_resistance_gain=env.wave_resistance_gain,
+            wave_motion_gain=env.wave_motion_gain,
+            cell_size=config.world.cell_size, rng=rng)
     raise ValueError(f"Unknown vessel.model '{vc.model}' "
                      f"(expected 'nomoto' or 'fossen3')")

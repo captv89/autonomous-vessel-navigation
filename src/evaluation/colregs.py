@@ -29,7 +29,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from src.config import ShipDomain
 from src.environment.collision_detection import CollisionDetector
+from src.sim.ship_domain import domain_distance
 
 
 @dataclass
@@ -81,10 +83,24 @@ def _heading_series_turn(steps: List[dict], start: int, end: int,
 
 
 def score_episode(steps: List[dict], safe_distance: float,
-                  collision_radius: float) -> List[EncounterScore]:
-    """Score every close-quarters encounter in one recorded episode."""
+                  collision_radius: float,
+                  domain: Optional[ShipDomain] = None,
+                  restricted_visibility: bool = False) -> List[EncounterScore]:
+    """Score every close-quarters encounter in one recorded episode.
+
+    The passing-distance component is judged against `domain` (an asymmetric
+    ship domain); the default circular domain reproduces the legacy
+    range/safe_distance test exactly.
+
+    When `restricted_visibility` is set, every encounter is scored under
+    Rule 19 instead of Rules 14-17 (gap G10): there are no give-way/stand-on
+    roles; compliance rewards action in ample time and, for a vessel forward
+    of the beam, avoiding an alteration to port (Rule 19(d)(i)).
+    """
     if not steps:
         return []
+    if domain is None:
+        domain = ShipDomain()
     detector = CollisionDetector(safe_distance=safe_distance,
                                  warning_distance=safe_distance * 2)
     vessel_ids = sorted({ob["id"] for s in steps for ob in s["obstacles"]})
@@ -127,10 +143,40 @@ def score_episode(steps: List[dict], safe_distance: float,
 
         turn = _heading_series_turn(steps, onset_i, end_i)
         collided = min_sep < collision_radius
-        sep_score = float(np.clip(min_sep / safe_distance, 0.0, 1.0))
+        # Passing-distance score uses the deepest ship-domain intrusion over
+        # the encounter (a close target ahead counts worse than one astern).
+        # Circular domain => min_sep / safe_distance, the legacy behavior.
+        sep_score = float(np.clip(
+            min(domain_distance(s["vessel"]["x"], s["vessel"]["y"],
+                                s["vessel"]["heading"], ob["x"], ob["y"],
+                                safe_distance, domain)
+                for _, s, ob in series), 0.0, 1.0))
 
         comp: Dict[str, float] = {}
-        if encounter == "head-on":
+        if restricted_visibility:
+            # Rule 19: in restricted visibility the give-way/stand-on roles do
+            # not apply; the test is action in ample time and, for a target
+            # forward of the beam, avoiding an alteration to port.
+            role = "any"
+            forward_of_beam = abs(bearing) <= np.pi / 2
+            early_end = onset_i + max(
+                1, int(0.5 * onset_tcpa
+                       / max(steps[1]["t"] - steps[0]["t"], 1e-6)))
+            early_turn = _heading_series_turn(
+                steps, onset_i, min(early_end, end_i))
+            comp["early_action"] = 1.0 if early_turn is not None else 0.0
+            comp["safe_distance"] = sep_score
+            if forward_of_beam:
+                # Rule 19(d)(i): avoid altering to port for a vessel forward of
+                # the beam (a starboard alteration, or holding, is compliant).
+                comp["avoid_port_turn"] = 0.0 if turn == "port" else 1.0
+                score = (0.3 * comp["early_action"]
+                         + 0.3 * comp["avoid_port_turn"]
+                         + 0.4 * comp["safe_distance"])
+            else:
+                score = (0.4 * comp["early_action"]
+                         + 0.6 * comp["safe_distance"])
+        elif encounter == "head-on":
             role = "give_way"
             comp["starboard_turn"] = 1.0 if turn == "starboard" else 0.0
             comp["safe_distance"] = sep_score
@@ -178,6 +224,83 @@ def score_episode(steps: List[dict], safe_distance: float,
             onset_t=steps[onset_i]["t"], min_separation=min_sep,
             initial_turn=turn, score=float(score), components=comp))
     return out
+
+
+# Rule 10 (traffic separation scheme) scoring, gap G9.
+_TSS_FLOW_TOL_DEG = 90.0     # within this of a lane's flow counts as "with it"
+_TSS_ZONE_CAP = 0.30         # fraction of episode time in the zone scoring 0
+
+
+def _tss_lane_flow(tss, x: float) -> Optional[float]:
+    for x0, x1, flow_deg in tss.lanes:
+        if x0 <= x <= x1:
+            return flow_deg
+    return None
+
+
+def score_tss(steps: List[dict], tss) -> Dict[str, float]:
+    """Episode-level Rule 10 (traffic separation scheme) compliance.
+
+    The own ship's task is inferred from its net displacement relative to the
+    lane axis: motion *along* the axis is a transit (scored on proceeding with
+    the lane flow and keeping clear of the separation zone); motion *across* it
+    is a crossing (scored on crossing near right angles, Rule 10(c), and not
+    lingering in the zone). Components and the combined `score` are in [0, 1].
+    Returns {} when there is no scheme or no track.
+    """
+    if tss is None or not steps:
+        return {}
+    xs = np.array([s["vessel"]["x"] for s in steps])
+    ys = np.array([s["vessel"]["y"] for s in steps])
+    course = np.arctan2(ys[-1] - ys[0], xs[-1] - xs[0])
+    axis = np.radians(tss.axis_deg)
+    rel = abs(np.arctan2(np.sin(course - axis), np.cos(course - axis)))
+    rel = min(rel, np.pi - rel)                  # 0 = along axis, pi/2 = across
+
+    z0, z1 = tss.zone
+    frac_zone = float(np.mean((xs >= z0) & (xs <= z1)))
+
+    comp: Dict[str, float] = {}
+    if rel > np.pi / 4:                          # crossing the scheme
+        # A perpendicular crossing must pass through the zone; only penalize
+        # time beyond a direct crossing (lingering / paralleling the lanes).
+        span = abs(xs[-1] - xs[0])               # across-axis distance covered
+        expected = (z1 - z0) / span if span > 1e-6 else 0.0
+        excess = max(0.0, frac_zone - expected)
+        zone_clear = float(np.clip(1.0 - excess / _TSS_ZONE_CAP, 0.0, 1.0))
+        crossing_angle = float(np.clip(np.degrees(rel) / 90.0, 0.0, 1.0))
+        comp["crossing_angle"] = round(crossing_angle, 3)
+        comp["zone_clear"] = round(zone_clear, 3)
+        comp["score"] = round(0.6 * crossing_angle + 0.4 * zone_clear, 3)
+    else:                                        # transiting a lane
+        # A transit should never enter the zone: any time in it is penalized.
+        zone_clear = float(np.clip(1.0 - frac_zone / _TSS_ZONE_CAP, 0.0, 1.0))
+        comp["zone_clear"] = round(zone_clear, 3)
+        with_flow_n = total = 0
+        for s in steps:
+            v = s["vessel"]
+            flow = _tss_lane_flow(tss, v["x"])
+            if flow is None or v["speed"] <= 1e-3:
+                continue
+            total += 1
+            d = np.arctan2(np.sin(v["heading"] - np.radians(flow)),
+                           np.cos(v["heading"] - np.radians(flow)))
+            if abs(np.degrees(d)) <= _TSS_FLOW_TOL_DEG:
+                with_flow_n += 1
+        with_flow = with_flow_n / total if total else 1.0
+        comp["with_flow"] = round(with_flow, 3)
+        comp["score"] = round(0.6 * with_flow + 0.4 * zone_clear, 3)
+    return comp
+
+
+def aggregate_tss(per_episode: List[Dict[str, float]]) -> Dict[str, Any]:
+    """Mean Rule 10 score over the episodes that ran under a TSS."""
+    scored = [r for r in per_episode if r]
+    if not scored:
+        return {"episodes": 0}
+    return {"episodes": len(scored),
+            "mean_score": round(
+                float(np.mean([r["score"] for r in scored])), 3)}
 
 
 def aggregate_compliance(per_episode: List[List[EncounterScore]]

@@ -1,14 +1,17 @@
 name: Deploy leaderboard to GitHub Pages
 
-# Publishes the committed benchmark results (reports/benchmark-v1) as a
-# static leaderboard page. The HTML is regenerated from results.json at
-# deploy time so the page always matches the committed numbers.
+# Publishes the committed benchmark results as a static leaderboard site.
+# VesselNav-Bench v2 is the main page (/); v1 is archived at /v1/, with a
+# header link between them. Until v2 results are committed, the site root
+# falls back to v1 so the page never breaks. The HTML is regenerated from
+# results.json at deploy time so the page always matches the committed numbers.
 #
 on:
   push:
     branches: [main]
     paths:
-      - "reports/benchmark-v1/results.json"
+      - "reports/v1/benchmark-v1/results.json"
+      - "reports/v2/benchmark/results.json"
       - "src/evaluation/html_report.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -33,12 +36,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Build leaderboard page
+      - name: Build leaderboard site (v2 main, v1 archived)
         run: |
-          mkdir -p _site
-          python src/evaluation/html_report.py \
-            reports/benchmark-v1/results.json _site/index.html
-          cp reports/benchmark-v1/leaderboard.md _site/leaderboard.md
+          PYTHONPATH=. python - <<'EOF'
+          import shutil
+          from pathlib import Path
+          from src.evaluation.html_report import write_html
+
+          A = 'style="color:#5dd39e;text-decoration:none"'
+          NAV_TO_V1 = f'<p style="margin:.2em 0 1.2em"><a {A} href="v1/">&rarr; VesselNav-Bench v1 (archived)</a></p>'
+          NAV_TO_V2 = f'<p style="margin:.2em 0 1.2em"><a {A} href="../">&larr; VesselNav-Bench v2 (current)</a></p>'
+
+          site = Path("_site"); site.mkdir(exist_ok=True)
+          v1 = Path("reports/v1/benchmark-v1")
+          v2 = Path("reports/v2/benchmark")
+
+          if (v2 / "results.json").exists():
+              # v2 is the main page, v1 archived under /v1/.
+              write_html(v2 / "results.json", site / "index.html", nav_link=NAV_TO_V1)
+              shutil.copy(v2 / "leaderboard.md", site / "leaderboard.md")
+              (site / "v1").mkdir(exist_ok=True)
+              write_html(v1 / "results.json", site / "v1" / "index.html", nav_link=NAV_TO_V2)
+              shutil.copy(v1 / "leaderboard.md", site / "v1" / "leaderboard.md")
+              print("Published v2 (main) + v1 (archived).")
+          else:
+              # No v2 results committed yet: keep v1 at the site root.
+              write_html(v1 / "results.json", site / "index.html")
+              shutil.copy(v1 / "leaderboard.md", site / "leaderboard.md")
+              print("No v2 results committed yet; published v1 at root.")
+          EOF
       - uses: actions/configure-pages@v5
         with:
           # Enable Pages automatically if the repo (or a fork) hasn't yet.

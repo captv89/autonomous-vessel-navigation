@@ -1,0 +1,56 @@
+# The Imazu problem as a VesselNav benchmark suite.
+#
+# This is a DIAGNOSTIC suite, not the frozen exam (see benchmarks/v1.yaml,
+# which must never be edited). It reproduces the 22 canonical Imazu encounter
+# geometries (Sawada et al. 2021, Table 4) so results can be cross-referenced
+# against the COLREGs / deep-RL collision-avoidance literature. See
+# docs/IMAZU.md for the case-by-case mapping and coordinate convention.
+#
+#   uv run python main.py benchmark --suite benchmarks/imazu.yaml \
+#       --agent classical --agent mpc
+#
+# Each Imazu case is a single deterministic geometry, so one episode per
+# scenario per condition is the canonical evaluation (pass/fail per case);
+# the `disturbed` condition adds a seeded current/gust spot-check.
+name: vesselnav-imazu
+version: 1
+description: >
+  The Imazu problem (Sawada et al. 2021): 22 canonical 1-to-3-target-ship
+  encounter geometries reproduced on the VesselNav scale, in calm and
+  disturbed conditions. A diagnostic suite for literature comparability,
+  separate from the frozen v1 exam.
+
+episodes_per_scenario: 1
+base_seed: 1000
+
+scenarios:
+  - imazu_01
+  - imazu_02
+  - imazu_03
+  - imazu_04
+  - imazu_05
+  - imazu_06
+  - imazu_07
+  - imazu_08
+  - imazu_09
+  - imazu_10
+  - imazu_11
+  - imazu_12
+  - imazu_13
+  - imazu_14
+  - imazu_15
+  - imazu_16
+  - imazu_17
+  - imazu_18
+  - imazu_19
+  - imazu_20
+  - imazu_21
+  - imazu_22
+
+conditions:
+  calm: {}
+  disturbed:
+    environment:
+      randomize: true
+      max_random_current: 0.3
+      wind_gust_accel: 0.03

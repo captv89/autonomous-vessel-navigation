@@ -97,7 +97,8 @@ class ClassicalAgent(Agent):
             self.follower = LOSController(
                 lookahead_distance=cfg.follower.lookahead,
                 path_tolerance=cfg.follower.path_tolerance,
-                integral_gain=cfg.follower.integral_gain)
+                integral_gain=cfg.follower.integral_gain,
+                turn_radius=cfg.follower.turn_radius)
         self.follower.reset()
 
         self.detector = CollisionDetector(
@@ -217,7 +218,8 @@ class ClassicalAgent(Agent):
                 return lambda pos: clone.compute_desired_heading(pos, waypoints)
             clone = LOSController(lookahead_distance=fcfg.lookahead,
                                   path_tolerance=fcfg.path_tolerance,
-                                  integral_gain=fcfg.integral_gain)
+                                  integral_gain=fcfg.integral_gain,
+                                  turn_radius=fcfg.turn_radius)
             clone.current_wp_idx = follower.current_wp_idx
             clone.sigma = follower.sigma
             return lambda pos: clone.compute_desired_heading(pos, waypoints,

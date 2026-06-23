@@ -4,10 +4,14 @@ Autonomous vessel navigation simulator - command line interface.
 
     python main.py scenarios                       list scenarios
     python main.py simulate  --agent classical --scenario head_on --render
+    python main.py simulate  --agent mpc --scenario worlds/static_only.yaml
     python main.py simulate  --agent rl --model models/ppo_vessel
     python main.py train     --timesteps 600000
     python main.py evaluate  --model models/ppo_vessel --episodes 10
     python main.py replay    logs/classical_head_on_0.jsonl
+
+Agents: classical, classical-legacy, mpc, rl, rl-shielded (rl/rl-shielded
+need --model). --scenario takes a registry name or a path to a world YAML.
 
 All command parameters that shape physics/behavior come from the YAML
 config (--config, default values in src/config.py).
@@ -28,24 +32,33 @@ def cmd_scenarios(args) -> None:
         print(f"{name:20s} {desc}")
 
 
-def _make_agent(config: Config, kind: str, model: str | None):
-    if kind == "classical":
-        from src.agents.classical import ClassicalAgent
-        return ClassicalAgent(config)
-    if kind == "rl":
+def _agent_spec(kind: str, model: str | None) -> str:
+    """Map a friendly --agent token (+ --model) to a benchmark agent spec."""
+    if kind in ("rl", "rl-shielded"):
         if not model:
-            sys.exit("--model is required for the RL agent")
-        from src.agents.rl_agent import RLAgent
-        return RLAgent(config, model)
-    sys.exit(f"unknown agent '{kind}'")
+            sys.exit(f"--model is required for the {kind} agent")
+        return f"{kind}:{model}"
+    return kind          # classical | classical-legacy | mpc | module:AgentClass
 
 
 def cmd_simulate(args) -> None:
-    from src.sim.scenarios import build_scenario
+    from src.sim.scenarios import build_scenario, load_world_file, _is_world_file
+    from src.evaluation.benchmark import make_agent_factory
     config = Config.load(args.config)
-    scenario = build_scenario(args.scenario, seed=args.seed)
-    agent = _make_agent(config, args.agent, args.model)
-    log_path = args.log or f"logs/{args.agent}_{args.scenario}_{args.seed or 0}.jsonl"
+    if _is_world_file(args.scenario):
+        # A world file may override world/environment params for this run.
+        scenario, overrides = load_world_file(args.scenario)
+        if args.seed is not None:
+            scenario.seed = args.seed
+        if overrides:
+            base = config.to_dict()
+            for section, vals in overrides.items():
+                base.setdefault(section, {}).update(vals)
+            config = Config.from_dict(base)
+    else:
+        scenario = build_scenario(args.scenario, seed=args.seed)
+    agent = make_agent_factory(_agent_spec(args.agent, args.model), config)()
+    log_path = args.log or f"logs/{args.agent}_{scenario.name}_{args.seed or 0}.jsonl"
 
     if args.render:
         from src.visualization.viewer import live
@@ -72,6 +85,7 @@ def cmd_train(args) -> None:
 
 def cmd_evaluate(args) -> None:
     from src.evaluation.report import generate_report
+    from src.evaluation.benchmark import make_agent_factory
     config = Config.load(args.config)
     scenario_names = (args.scenarios.split(",") if args.scenarios else
                       ["open_water", "head_on", "crossing_starboard",
@@ -79,9 +93,8 @@ def cmd_evaluate(args) -> None:
 
     factories = {}
     for kind in args.agents.split(","):
-        kind = kind.strip()
-        factories[kind if kind != "rl" else "rl_ppo"] = (
-            lambda k=kind: _make_agent(config, k, args.model))
+        factory = make_agent_factory(_agent_spec(kind.strip(), args.model), config)
+        factories[factory().name] = factory          # key by the agent's own name
 
     report = generate_report(config, factories, scenario_names,
                              episodes_per_scenario=args.episodes,
@@ -94,7 +107,7 @@ def cmd_benchmark(args) -> None:
     config = Config.load(args.config)
     suite = load_suite(args.suite)
     report = run_benchmark(config, suite, args.agent, out_dir=args.out,
-                           keep_logs=not args.no_logs)
+                           keep_logs=not args.no_logs, workers=args.workers)
     print(f"leaderboard: {report}")
 
 
@@ -113,10 +126,14 @@ def main() -> None:
     sub.add_parser("scenarios", help="list available scenarios")
 
     p = sub.add_parser("simulate", help="run one episode")
-    p.add_argument("--agent", default="classical", choices=["classical", "rl"])
-    p.add_argument("--scenario", default="coastal")
+    p.add_argument("--agent", default="classical",
+                   choices=["classical", "classical-legacy", "mpc",
+                            "rl", "rl-shielded"])
+    p.add_argument("--scenario", default="coastal",
+                   help="scenario name or path to a world YAML file")
     p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--model", default=None, help="RL model path (.zip)")
+    p.add_argument("--model", default=None,
+                   help="model path (.zip) for rl / rl-shielded agents")
     p.add_argument("--config", default=None, help="YAML config")
     p.add_argument("--log", default=None, help="episode log output path")
     p.add_argument("--render", action="store_true", help="pygame live view")
@@ -129,7 +146,9 @@ def main() -> None:
     p.add_argument("--n-envs", type=int, default=None)
 
     p = sub.add_parser("evaluate", help="run comparison suite + report")
-    p.add_argument("--agents", default="classical,rl")
+    p.add_argument("--agents", default="classical,rl",
+                   help="comma-separated agents: classical, classical-legacy, "
+                        "mpc, rl, rl-shielded")
     p.add_argument("--model", default="models/ppo_vessel",
                    help="RL model path")
     p.add_argument("--scenarios", default=None,
@@ -152,6 +171,9 @@ def main() -> None:
     p.add_argument("--no-logs", action="store_true",
                    help="skip per-episode logs (faster, disables COLREGs "
                         "scoring and replays)")
+    p.add_argument("--workers", type=int, default=1,
+                   help="parallel worker processes; one (agent, condition) "
+                        "block per task (default 1 = sequential)")
 
     p = sub.add_parser("replay", help="replay a recorded episode")
     p.add_argument("log", help="JSONL episode log")

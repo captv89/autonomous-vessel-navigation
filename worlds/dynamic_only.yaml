@@ -1,0 +1,20 @@
+# Dynamic-only world: open water with moving traffic, no static obstacles.
+# Exercises collision avoidance / COLREGs handling without any landmasses.
+name: dynamic_only
+description: "Open water with several moving vessels; W->E collision avoidance."
+start: [10, 50]
+start_heading_deg: 0
+goal: [90, 50]
+
+rect_obstacles: []
+circle_obstacles: []
+
+# traffic: x, y in cells; heading_deg is the course the vessel steers;
+# behavior: straight | waypoint | circular.
+# compliance (optional): none/rogue (default, never give way) |
+#   compliant | partial — reactive targets take starboard give-way action.
+traffic:
+  - {x: 90, y: 50, heading_deg: 180, speed: 0.45}         # reciprocal / head-on
+  - {x: 55, y: 12, heading_deg: 90, speed: 0.4}           # crossing from starboard
+  - {x: 30, y: 50, heading_deg: 0, speed: 0.25}           # slow vessel ahead (overtaking)
+seed: null
