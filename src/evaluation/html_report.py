@@ -1,9 +1,13 @@
 """
 Static HTML leaderboard generated from benchmark results.json.
 
-Dependency-free output (single self-contained page, inline CSS) intended
-for GitHub Pages deployment. Every number matches results.json exactly;
-the page is presentation only.
+Dependency-free output for the data itself (every number is rendered into
+the DOM straight from results.json and matches it exactly; the page is
+presentation only). The page is progressively enhanced with a cinematic
+3D ocean hero rendered via three.js loaded from a pinned, SRI-verified CDN
+build. If the CDN or WebGL is unavailable — or JavaScript is disabled —
+the hero falls back to a static CSS ocean gradient and the full leaderboard
+still renders. No enhancement is required to read any benchmark number.
 """
 
 from __future__ import annotations
@@ -12,20 +16,83 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+# Pinned three.js build (UMD global `THREE`) with Subresource Integrity so the
+# byte content is verified by the browser; `defer` keeps it from blocking the
+# initial paint and the hero init runs on `window.load` once it is available.
+THREE_CDN = (
+    '<script defer '
+    'src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" '
+    'integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu" '
+    'crossorigin="anonymous" referrerpolicy="no-referrer"></script>'
+)
+
 CSS = """
-:root { --bg:#0e1420; --card:#171f2e; --text:#e8ebf0; --dim:#9aa3b2;
-        --accent:#5dd39e; --warn:#e8865a; --bar:#3b82c4; }
+:root { --bg:#0a0f1a; --card:#171f2e; --text:#e8ebf0; --dim:#9aa3b2;
+        --accent:#5dd39e; --warn:#e8865a; --bar:#3b82c4;
+        --gold:#e8c45a; --silver:#c9d2e0; --bronze:#d8966a;
+        --glass:rgba(23,31,46,.62); --line:rgba(255,255,255,.08); }
 * { box-sizing: border-box; }
-body { background:var(--bg); color:var(--text); margin:0;
+html { scroll-behavior:smooth; }
+body { background:
+        radial-gradient(110% 60% at 50% -10%, #102234 0%, transparent 60%),
+        linear-gradient(180deg, #0a0f1a 0%, #0b1320 100%) fixed;
+       color:var(--text); margin:0;
        font:15px/1.55 -apple-system,'Segoe UI',Roboto,sans-serif; }
 .wrap { max-width:1080px; margin:0 auto; padding:32px 20px 64px; }
 h1 { font-size:1.9em; margin:.2em 0 .1em; }
 h2 { margin-top:1.8em; border-bottom:1px solid #2a3548;
-     padding-bottom:.3em; }
+     padding-bottom:.3em; scroll-margin-top:18px; }
 .sub { color:var(--dim); margin-bottom:1.4em; }
 .badge { display:inline-block; background:#22304a; border-radius:6px;
          padding:2px 10px; margin-right:8px; font-size:.85em;
          color:var(--dim); }
+
+/* ---------------------------------------------------------------- 3D hero */
+.hero { position:relative; height:100vh; min-height:560px; width:100%;
+        overflow:hidden; display:flex; align-items:center;
+        justify-content:center;
+        background:linear-gradient(180deg,#0a1020 0%,#0e2438 32%,
+                   #114049 52%,#0c1f2b 72%,#0a0f1a 100%); }
+.hero canvas { position:absolute; inset:0; width:100%; height:100%;
+               display:block; opacity:0; transition:opacity 1.4s ease; }
+.hero canvas.on { opacity:1; }
+.hero::after { content:""; position:absolute; inset:0; pointer-events:none;
+   background:
+     radial-gradient(120% 75% at 50% 16%, rgba(93,211,158,.12), transparent 60%),
+     linear-gradient(180deg, rgba(10,15,26,0) 52%, rgba(10,15,26,.9) 100%); }
+.hero-inner { position:relative; z-index:2; text-align:center; padding:0 22px;
+   max-width:920px; animation:floatIn 1.2s cubic-bezier(.2,.7,.2,1) both; }
+.hero-eyebrow { color:var(--accent); font-size:.82rem; font-weight:600;
+   text-transform:uppercase; letter-spacing:.22em; margin-bottom:14px; }
+.hero-title { font-size:clamp(2.4rem,7vw,5rem); font-weight:800;
+   line-height:1.02; margin:0; letter-spacing:-.02em;
+   background:linear-gradient(180deg,#ffffff 0%,#c7ecda 62%,#5dd39e 100%);
+   -webkit-background-clip:text; background-clip:text; color:transparent;
+   filter:drop-shadow(0 4px 34px rgba(93,211,158,.25)); }
+.hero-title .v { -webkit-text-fill-color:#7d8aa0; color:#7d8aa0;
+   font-weight:600; }
+.hero-tag { color:#d2dae6; font-size:clamp(1rem,2.1vw,1.25rem);
+   margin:1em auto 0; max-width:660px; }
+.hero-stat { margin-top:1.7em; display:inline-flex; flex-wrap:wrap;
+   justify-content:center; }
+.hero-stat span { padding:4px 22px; border-right:1px solid rgba(255,255,255,.15); }
+.hero-stat span:last-child { border-right:none; }
+.hero-stat b { display:block; font-size:1.8rem; font-weight:700;
+   color:var(--accent); line-height:1.1; }
+.hero-stat i { font-style:normal; color:var(--dim); font-size:.72rem;
+   text-transform:uppercase; letter-spacing:.1em; }
+.scroll-cue { position:absolute; bottom:26px; left:50%; z-index:2;
+   transform:translateX(-50%); color:var(--dim); text-decoration:none;
+   font-size:.72rem; text-transform:uppercase; letter-spacing:.18em;
+   text-align:center; animation:bob 2.2s ease-in-out infinite; }
+.scroll-cue::after { content:"\\2193"; display:block; font-size:1.3rem;
+   margin-top:8px; }
+@keyframes floatIn { from{opacity:0;transform:translateY(26px)}
+   to{opacity:1;transform:none} }
+@keyframes bob { 0%,100%{transform:translateX(-50%) translateY(0)}
+   50%{transform:translateX(-50%) translateY(8px)} }
+
+/* ------------------------------------------------------------------ tables */
 table { width:100%; border-collapse:collapse; background:var(--card);
         border-radius:10px; overflow:hidden; font-size:.92em; }
 th, td { padding:9px 12px; text-align:left;
@@ -33,6 +100,11 @@ th, td { padding:9px 12px; text-align:left;
 th { background:#1d2738; color:var(--dim); font-weight:600;
      font-size:.85em; text-transform:uppercase; letter-spacing:.04em; }
 tr:last-child td { border-bottom:none; }
+tbody tr { transition:background .2s ease; }
+tbody tr:hover { background:#1c2740; }
+tr.top1 td:first-child { box-shadow:inset 3px 0 0 var(--gold); }
+tr.top2 td:first-child { box-shadow:inset 3px 0 0 var(--silver); }
+tr.top3 td:first-child { box-shadow:inset 3px 0 0 var(--bronze); }
 .rank { color:var(--dim); }
 .score { font-weight:700; color:var(--accent); font-size:1.06em; }
 .ci { color:var(--dim); font-size:.85em; }
@@ -40,17 +112,48 @@ tr:last-child td { border-bottom:none; }
             width:140px; display:inline-block; vertical-align:middle;
             margin-left:8px; }
 .scorebar i { display:block; height:100%; border-radius:4px;
-              background:var(--bar); }
+              background:linear-gradient(90deg,var(--bar),var(--accent)); }
 .agent { font-weight:600; }
 footer { color:var(--dim); margin-top:3em; font-size:.85em; }
 a { color:#7db8e8; }
 code { background:#22304a; padding:1px 6px; border-radius:4px;
        font-size:.88em; }
-.note { background:var(--card); border-left:3px solid var(--bar);
+.note { background:var(--glass);
+        backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+        border-left:3px solid var(--bar);
         padding:10px 16px; border-radius:0 8px 8px 0; color:var(--dim);
         margin:1em 0; }
+
+/* ----------------------------------------------------------------- podium */
+.podium-wrap { scroll-margin-top:18px; }
+.podium { display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+          align-items:end; margin-top:18px; }
+.pcard { background:linear-gradient(180deg, rgba(36,48,74,.5),
+                                     rgba(23,31,46,.66));
+         backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px);
+         border:1px solid var(--line); border-radius:16px;
+         padding:22px 18px; text-align:center; position:relative; }
+.pcard.gold { border-color:rgba(232,196,90,.55); transform:translateY(-14px);
+              box-shadow:0 20px 54px rgba(232,196,90,.16); }
+.pcard.silver { border-color:rgba(201,210,224,.42); }
+.pcard.bronze { border-color:rgba(216,150,106,.42); }
+.pmedal { width:34px; height:34px; line-height:34px; border-radius:50%;
+          margin:0 auto 10px; font-weight:700; color:#0e1420; }
+.gold .pmedal { background:var(--gold); }
+.silver .pmedal { background:var(--silver); }
+.bronze .pmedal { background:var(--bronze); }
+.pname { font-weight:700; font-size:1.1rem; }
+.pscore { font-size:2.4rem; font-weight:800; color:var(--accent);
+          line-height:1.1; margin-top:6px; }
+.plabel { color:var(--dim); font-size:.7rem; text-transform:uppercase;
+          letter-spacing:.08em; }
+.psub { color:var(--dim); font-size:.85rem; margin-top:8px; }
+
+/* ----------------------------------------------------------------- charts */
 .figs { display:flex; flex-wrap:wrap; gap:20px; margin-top:18px; }
-.figs figure { background:var(--card); border-radius:10px;
+.figs figure { background:var(--glass);
+               backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+               border:1px solid var(--line); border-radius:14px;
                padding:14px 16px 8px; margin:0; flex:1 1 460px;
                min-width:280px; }
 .figs figcaption { color:var(--dim); font-size:.85em; font-weight:600;
@@ -63,20 +166,265 @@ code { background:#22304a; padding:1px 6px; border-radius:4px;
           font-weight:400; }
 .cards { display:grid; gap:14px;
          grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); }
-.card { background:var(--card); border-radius:10px; padding:14px 16px; }
+.card { background:var(--glass);
+        backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+        border:1px solid var(--line); border-radius:14px;
+        padding:14px 16px; transition:transform .2s ease, border-color .2s ease; }
+.card:hover { transform:translateY(-3px); border-color:rgba(93,211,158,.4); }
 .card h4 { margin:0 0 4px; font-size:1em; }
 .card .author { margin-bottom:6px; }
 .card p { margin:0; color:var(--dim); font-size:.9em; }
 .fam { display:inline-block; font-size:.72em; color:#7db8e8;
        border:1px solid #2a3f5e; border-radius:99px; padding:1px 9px;
        margin-left:6px; vertical-align:middle; }
+
+/* reveal-on-scroll (added by JS only, so no-JS shows everything) */
+.reveal { opacity:0; transform:translateY(20px);
+          transition:opacity .7s ease, transform .7s ease; }
+.reveal.in { opacity:1; transform:none; }
+
 @media (max-width: 640px) {
   .wrap { padding:18px 12px 48px; }
   h1 { font-size:1.45em; }
   table { font-size:.82em; }
   th, td { padding:7px 8px; }
   .scorebar { width:70px; }
+  .podium { grid-template-columns:1fr; gap:12px; }
+  .pcard.gold { transform:none; }
 }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior:auto; }
+  .hero-inner, .scroll-cue { animation:none; }
+  .reveal { opacity:1 !important; transform:none !important; transition:none; }
+}
+"""
+
+# Cinematic ocean hero. Runs on `window.load` so the deferred three.js build is
+# already parsed; bails cleanly to the CSS gradient if THREE or WebGL is absent
+# or the user prefers reduced motion. The whole scene is decorative — no
+# benchmark data flows through it.
+HERO_JS = r"""
+window.addEventListener('load', function () {
+  var canvas = document.getElementById('sea');
+  if (!canvas) return;
+  var reduce = window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function hasWebGL() {
+    try {
+      var c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext &&
+        (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    } catch (e) { return false; }
+  }
+  if (!window.THREE || !hasWebGL()) return;   // CSS ocean fallback stays
+
+  var THREE = window.THREE;
+  var renderer;
+  try {
+    // Context creation can still fail after hasWebGL() passes (e.g. browser
+    // hardware acceleration disabled or GPU blocklisted). Degrade to the CSS
+    // ocean rather than throwing an uncaught exception.
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+  } catch (e) { return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+  camera.position.set(0, 17, 46);
+
+  scene.add(new THREE.AmbientLight(0x33415c, 0.85));
+  var sun = new THREE.DirectionalLight(0xfff0d0, 1.1);
+  sun.position.set(-40, 60, 24);
+  scene.add(sun);
+
+  var uniforms = {
+    uTime:    { value: 0 },
+    uDeep:    { value: new THREE.Color(0x0a1422) },
+    uShallow: { value: new THREE.Color(0x1d6070) },
+    uCrest:   { value: new THREE.Color(0x5dd39e) },
+    uFog:     { value: new THREE.Color(0x0c1a28) },
+    uSun:     { value: new THREE.Vector3(-0.5, 0.7, 0.35) }
+  };
+  var vert = [
+    'uniform float uTime;',
+    'varying float vH; varying vec3 vN; varying vec3 vWorld; varying float vDist;',
+    'float wave(vec2 p){',
+    '  float h = 0.0;',
+    '  h += 1.70*sin(dot(vec2(0.86,0.51),p)*0.09 + uTime*1.05);',
+    '  h += 1.05*sin(dot(vec2(-0.57,0.82),p)*0.15 + uTime*0.85);',
+    '  h += 0.55*sin(dot(vec2(0.40,-0.92),p)*0.24 + uTime*1.55);',
+    '  h += 0.28*sin(dot(vec2(0.99,0.10),p)*0.37 + uTime*2.10);',
+    '  return h;',
+    '}',
+    'void main(){',
+    '  vec3 pos = position;',
+    '  vec2 p = pos.xz;',
+    '  float h = wave(p);',
+    '  pos.y += h; vH = h;',
+    '  float e = 0.75;',
+    '  float hR = wave(p+vec2(e,0.0)); float hL = wave(p+vec2(-e,0.0));',
+    '  float hU = wave(p+vec2(0.0,e)); float hD = wave(p+vec2(0.0,-e));',
+    '  vN = normalize(vec3(hL-hR, 2.0*e, hD-hU));',
+    '  vec4 world = modelMatrix*vec4(pos,1.0); vWorld = world.xyz;',
+    '  vec4 mv = modelViewMatrix*vec4(pos,1.0); vDist = -mv.z;',
+    '  gl_Position = projectionMatrix*mv;',
+    '}'
+  ].join('\n');
+  var frag = [
+    'uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest;',
+    'uniform vec3 uFog; uniform vec3 uSun;',
+    'varying float vH; varying vec3 vN; varying vec3 vWorld; varying float vDist;',
+    'void main(){',
+    '  vec3 n = normalize(vN);',
+    '  vec3 viewDir = normalize(cameraPosition - vWorld);',
+    '  vec3 sun = normalize(uSun);',
+    '  float hN = clamp(vH*0.22 + 0.5, 0.0, 1.0);',
+    '  vec3 col = mix(uDeep, uShallow, hN);',
+    '  col = mix(col, uCrest, clamp(vH-0.6,0.0,1.0)*0.55);',
+    '  float diff = max(dot(n,sun),0.0);',
+    '  col += diff*0.10*vec3(0.6,0.8,0.7);',
+    '  vec3 r = reflect(-sun,n);',
+    '  float spec = pow(max(dot(r,viewDir),0.0),80.0);',
+    '  col += spec*vec3(1.0,0.93,0.75)*0.9;',
+    '  float fres = pow(1.0-max(dot(n,viewDir),0.0),4.0);',
+    '  col = mix(col, uCrest*0.6+uShallow*0.4, fres*0.35);',
+    '  float fog = smoothstep(70.0,340.0,vDist);',
+    '  col = mix(col, uFog, fog);',
+    '  gl_FragColor = vec4(col,1.0);',
+    '}'
+  ].join('\n');
+
+  var geo = new THREE.PlaneGeometry(800, 800, 180, 180);
+  geo.rotateX(-Math.PI/2);
+  var ocean = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: uniforms, vertexShader: vert, fragmentShader: frag
+  }));
+  scene.add(ocean);
+
+  function makeVessel() {
+    var g = new THREE.Group();
+    var s = new THREE.Shape();
+    s.moveTo(0, 3.2); s.lineTo(1.1, 1.0); s.lineTo(1.1, -2.6);
+    s.lineTo(-1.1, -2.6); s.lineTo(-1.1, 1.0); s.lineTo(0, 3.2);
+    var hull = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(s, { depth: 1.4, bevelEnabled: true,
+        bevelThickness: 0.25, bevelSize: 0.25, bevelSegments: 2 }),
+      new THREE.MeshStandardMaterial({ color: 0x1b2433, roughness: 0.6, metalness: 0.2 }));
+    hull.rotation.x = -Math.PI/2; hull.position.y = 0.2;
+    g.add(hull);
+    var cabin = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 1.6),
+      new THREE.MeshStandardMaterial({ color: 0x5dd39e, roughness: 0.4,
+        emissive: 0x0c4030, emissiveIntensity: 0.4 }));
+    cabin.position.set(0, 1.0, -0.3); g.add(cabin);
+    g.scale.set(1.6, 1.6, 1.6);
+    return g;
+  }
+  var vessel = makeVessel();
+  scene.add(vessel);
+
+  function path(t) {                       // gentle S-course away from camera
+    return new THREE.Vector3(Math.sin(t*Math.PI*2.0)*16.0, 0, 60 - t*200);
+  }
+  var pts = [];
+  for (var i = 0; i <= 120; i++) pts.push(path(i/120));
+  var curve = new THREE.CatmullRomCurve3(pts);
+  var line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(curve.getPoints(220)),
+    new THREE.LineBasicMaterial({ color: 0x5dd39e, transparent: true, opacity: 0.32 }));
+  line.position.y = 0.2;
+  scene.add(line);
+
+  var clock = new THREE.Clock();
+  function placeVessel(time) {
+    var t = (time * 0.025) % 1;
+    var p = path(t), p2 = path((t + 0.002) % 1);
+    vessel.position.set(p.x, 0.35 + Math.sin(time*1.2)*0.22, p.z);
+    vessel.rotation.y = Math.atan2(p2.x - p.x, p2.z - p.z);
+    vessel.rotation.z = Math.sin(time*0.9)*0.06;
+    vessel.rotation.x = Math.sin(time*0.7)*0.04;
+  }
+  function render() {
+    var time = clock.getElapsedTime();
+    uniforms.uTime.value = time;
+    placeVessel(time);
+    camera.position.x = Math.sin(time*0.08)*7;
+    camera.position.y = 17 + Math.sin(time*0.15)*1.2;
+    camera.lookAt(0, 1.5, -26);
+    renderer.render(scene, camera);
+  }
+  function resize() {
+    var w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  canvas.classList.add('on');
+
+  if (reduce) { uniforms.uTime.value = 1.8; placeVessel(1.8);
+    camera.lookAt(0, 1.5, -26); renderer.render(scene, camera); return; }
+
+  var visible = true, inView = true;
+  document.addEventListener('visibilitychange', function () {
+    visible = !document.hidden;
+  });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      inView = es[0].isIntersecting;
+    }, { threshold: 0 }).observe(canvas);
+  }
+  (function loop() {
+    requestAnimationFrame(loop);
+    if (visible && inView) render();
+  })();
+});
+"""
+
+# Progressive enhancement: fade sections in on scroll and count scores up.
+# Adds classes only via JS, so with JS disabled everything is fully visible and
+# every score shows its exact final value immediately.
+REVEAL_JS = r"""
+window.addEventListener('DOMContentLoaded', function () {
+  if (!('IntersectionObserver' in window)) return;
+  var reduce = window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (!reduce) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('h2,.cards,.figs,.tablewrap,.note,.podium')
+      .forEach(function (el) { el.classList.add('reveal'); io.observe(el); });
+  }
+
+  var cio = new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      var el = e.target; cio.unobserve(el);
+      var orig = el.getAttribute('data-val');
+      var target = parseFloat(orig); if (isNaN(target)) return;
+      if (reduce) { el.textContent = orig; return; }
+      var dot = orig.indexOf('.');
+      var dec = dot >= 0 ? orig.length - dot - 1 : 0;
+      var dur = 900, t0 = null;
+      var step = function (ts) {
+        if (!t0) t0 = ts;
+        var k = Math.min((ts - t0) / dur, 1);
+        var eased = 0.5 - 0.5 * Math.cos(Math.PI * k);
+        el.textContent = (target * eased).toFixed(dec);
+        if (k < 1) requestAnimationFrame(step); else el.textContent = orig;
+      };
+      requestAnimationFrame(step);
+    });
+  }, { threshold: 0.6 });
+  document.querySelectorAll('.score,.pscore').forEach(function (el) {
+    var v = parseFloat(el.textContent); if (isNaN(v)) return;
+    el.setAttribute('data-val', el.textContent.trim());
+    cio.observe(el);
+  });
+});
 """
 
 
@@ -336,17 +684,76 @@ def _compliance_cell(score: float, n: int) -> str:
             f'{score:.2f} <span class="ci">(n={n})</span></td>')
 
 
+def _hero(suite: Dict[str, Any], agents: Dict[str, Any],
+          conditions, scenarios) -> str:
+    """Full-viewport cinematic ocean hero. Decorative only — the title, tagline
+    and headline stats are real DOM so they survive any JS/WebGL failure."""
+    n_agents = len(agents)
+    n_scn = len(scenarios)
+    total_eps = n_scn * suite.get("episodes_per_scenario", 0) * len(conditions)
+    return (
+        '<section class="hero">'
+        '<canvas id="sea"></canvas>'
+        '<div class="hero-inner">'
+        '<div class="hero-eyebrow">Autonomous Vessel Navigation · '
+        'COLREGs Benchmark</div>'
+        f'<h1 class="hero-title">{suite["name"]}'
+        f'<span class="v"> v{suite["version"]}</span></h1>'
+        '<p class="hero-tag">A transparent, reproducible benchmark where '
+        'rule-based, optimization and learning agents navigate the same seas '
+        'under the same collision-avoidance rules — every number backed by a '
+        'replayable episode log.</p>'
+        '<div class="hero-stat">'
+        f'<span><b>{n_agents}</b><i>agents</i></span>'
+        f'<span><b>{n_scn}</b><i>scenarios</i></span>'
+        f'<span><b>{total_eps}</b><i>seeded episodes</i></span>'
+        '</div></div>'
+        '<a class="scroll-cue" href="#leaderboard">View the leaderboard</a>'
+        '</section>')
+
+
+def _podium(agents: Dict[str, Any], cond: str) -> str:
+    """Top-3 glass podium for a condition, built from the same ranked data the
+    leaderboard table uses (gold centered and lifted, silver left, bronze right)."""
+    ranked = sorted(agents.values(),
+                    key=lambda a: a["conditions"][cond]["benchmark_score"],
+                    reverse=True)[:3]
+    klass = ["gold", "silver", "bronze"]
+    medal = ["1", "2", "3"]
+    visual_order = [1, 0, 2]  # silver, gold, bronze
+    cards = []
+    for v in visual_order:
+        if v >= len(ranked):
+            continue
+        agent = ranked[v]
+        c = agent["conditions"][cond]
+        cards.append(
+            f'<div class="pcard {klass[v]}">'
+            f'<div class="pmedal">{medal[v]}</div>'
+            f'<div class="pname">{agent["name"]}</div>'
+            f'<div class="pscore">{c["benchmark_score"]}</div>'
+            f'<div class="plabel">benchmark score</div>'
+            f'<div class="psub">{c["success"]["rate"]:.0%} success · '
+            f'{cond}</div></div>')
+    return (f'<section id="leaderboard" class="podium-wrap">'
+            f'<h2>Podium — {cond}</h2>'
+            f'<div class="podium">{"".join(cards)}</div></section>')
+
+
 def render_html(results: Dict[str, Any], nav_link: str = "") -> str:
     suite = results["suite"]
     agents = results["agents"]
     conditions = list(suite["conditions"])
+    scenarios = suite["scenarios"]
 
     parts = [f"""<!doctype html><html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{suite['name']} v{suite['version']} — Leaderboard</title>
-<style>{CSS}</style></head><body><div class="wrap">
-<h1>{suite['name']} <span style="color:var(--dim)">v{suite['version']}</span></h1>
+{THREE_CDN}
+<style>{CSS}</style></head><body>
+{_hero(suite, agents, conditions, scenarios)}
+<div class="wrap">
 {nav_link}
 <p class="sub">{suite.get('description', '')}</p>
 <p>
@@ -389,6 +796,9 @@ with identical config hashes.</div>"""]
 random current (up to 0.3 cells/s) and wind gusts. Every agent faces the
 identical episodes.</p>""")
 
+    # Top-3 podium for the first condition, doubling as the scroll-cue anchor.
+    parts.append(_podium(agents, conditions[0]))
+
     for cond in conditions:
         ranked = sorted(agents.values(),
                         key=lambda a: a["conditions"][cond]["benchmark_score"],
@@ -403,7 +813,8 @@ identical episodes.</p>""")
                            f"</span>"
                            if colregs.get("encounters") else "–")
             bar = int(min(max(c["benchmark_score"], 0), 100) * 1.4)
-            rows.append(f"""<tr>
+            tr_cls = f' class="top{rank}"' if rank <= 3 else ""
+            rows.append(f"""<tr{tr_cls}>
 <td class="rank">{rank}</td>
 <td class="agent">{agent['name']}
     <span class="author">{author}</span></td>
@@ -475,7 +886,11 @@ and <code>docs/SUBMITTING.md</code>. Every leaderboard number is backed by
 a replayable per-step episode log.</p>
 <footer>VesselNav-Bench — transparent benchmarking for autonomous vessel
 navigation.</footer>
-</div></body></html>""")
+</div>""")
+    # Progressive enhancement scripts live at the end of <body>; with JS or
+    # WebGL unavailable the page above is already complete and correct.
+    parts.append("<script>" + HERO_JS + "\n" + REVEAL_JS
+                 + "</script></body></html>")
     return "".join(parts)
 
 
